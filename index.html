@@ -436,7 +436,7 @@
    SFL Returns, USER, DELIVERY AGENT, DISPATCH LOCATION, plus a LOG
    tab the script manages for you). Nothing is cached or hidden.
    ===================================================================== */
-const SHEET_API_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzgJRwVlXMhsLA8-yv8eYAuyAGCiXawvxGJZzQoThc35l--tWO-o7cpzq3gbH6Eo7aT/exec";
 
 async function apiGet(action, params){
   const qs = new URLSearchParams({ action, ...(params||{}) }).toString();
