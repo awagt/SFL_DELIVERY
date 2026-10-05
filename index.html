@@ -216,10 +216,37 @@
   .print-table th, .print-table td{border:1px solid #999; padding:6px 10px; font-size:12.5px; text-align:left;}
   .print-sign{display:flex; justify-content:space-between; margin-top:50px; font-size:13px;}
   .print-sign div{width:45%; border-top:1px solid #333; padding-top:6px;}
+  @page{margin:14mm;}
   @media print{
+    body.printing{background:#fff !important; padding:0 !important; min-height:0;}
     body.printing > *:not(#printArea){display:none !important;}
-    body.printing #printArea{display:block !important; padding:0;}
+    body.printing #printArea{display:block !important; padding:0; color:#000;}
   }
+  .print-remark{margin:-6px 0 14px; font-size:13px;}
+
+  /* Sync chip */
+  .sync-bar{display:flex; align-items:center; gap:8px; margin-left:auto;}
+  .sync-chip{font-size:11px; font-family:'IBM Plex Mono',monospace; padding:3px 9px; border-radius:20px; background:var(--green-soft); color:var(--green); white-space:nowrap;}
+  .sync-chip.busy{background:var(--blue-soft); color:var(--blue);}
+  .sync-chip.pending{background:var(--amber-soft); color:var(--amber);}
+  .sync-chip.err{background:var(--red-soft); color:var(--red);}
+  .sync-btn{background:var(--ink); color:var(--paper); border:none; border-radius:7px; padding:6px 11px; font-size:12px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif;}
+  .sync-btn:disabled{opacity:0.5; cursor:default;}
+
+  /* Period bars (date / month filters) */
+  .period-bar{display:flex; gap:6px; flex-wrap:wrap; align-items:center;}
+  .period-bar select, .period-bar input{padding:8px 10px; border-radius:8px; border:1.5px solid var(--line); background:var(--paper-raised); font-family:'Inter',sans-serif; font-size:13px; color:var(--ink);}
+  .controls-2{display:flex; gap:10px; margin:-6px 0 16px; flex-wrap:wrap; align-items:center;}
+  .controls-2 .export-btn{margin-left:auto;}
+
+  .tag-attempt{background:#FBE9C6; color:#9A6500;}
+  .order-chip .att{font-size:10px; font-weight:700; background:#FBE9C6; color:#9A6500; border-radius:4px; padding:1px 5px;}
+  .chip .att{font-size:10px; font-weight:700; background:#F3C979; color:#5A3A00; border-radius:4px; padding:1px 5px;}
+  .chip.reattempt{background:#5A4A1E; color:#F7DFA5;}
+  .magento-note.attempt{background:#5A4A1E; color:#F7DFA5;}
+  .remark-line{font-size:12px; color:var(--ink-soft); margin-top:3px; font-style:italic;}
+  .assign-row textarea{flex:1 1 100%; min-width:150px; padding:10px 14px; border-radius:10px; border:none; font-family:'Inter',sans-serif; font-size:14px; background:#fff; color:var(--ink); resize:vertical; min-height:42px;}
+  .edit-form textarea{padding:9px 11px; border-radius:8px; border:1.5px solid var(--line); font-family:'Inter',sans-serif; font-size:13px; resize:vertical;}
 
   .view-only-note{
     background:var(--paper-raised); border:1.5px dashed var(--line); border-radius:12px;
@@ -267,6 +294,10 @@
   <div class="user-badge" style="margin:12px 0 -4px;">
     Signed in as <b id="userNameLabel"></b> <span class="role-pill" id="userRolePill"></span>
     <button class="logout-link" id="logoutBtn">Sign out</button>
+    <div class="sync-bar">
+      <span class="sync-chip busy" id="syncChip">Loading…</span>
+      <button class="sync-btn" id="syncBtn" title="Fetch the latest data from the Google Sheet">⟳ Sync now</button>
+    </div>
   </div>
 
 
@@ -280,7 +311,6 @@
 
   <datalist id="agentOptions"></datalist>
   <datalist id="locationOptions"></datalist>
-  <div id="printArea"></div>
 
   <!-- DISPATCH TAB -->
   <div class="tab-panel active" id="panel-dispatch">
@@ -296,6 +326,7 @@
         <input id="fDispatcher" placeholder="Dispatcher name (you)" disabled title="Locked to your signed-in name">
         <input id="fAgent" placeholder="Delivery agent" list="agentOptions">
         <input id="fLocation" placeholder="Dispatch location" list="locationOptions">
+        <textarea id="dRemark" placeholder="Remark (optional) — e.g. customer not available, fragile, COD…" rows="1"></textarea>
         <button class="btn-dispatch" id="dDispatchBtn" disabled>Confirm Dispatch</button>
         <button class="btn-clear" id="dClearBtn">Clear</button>
       </div>
@@ -306,6 +337,10 @@
       <div class="filter-chip active" data-filter="all" data-group="d">All</div>
       <div class="filter-chip" data-filter="dispatched" data-group="d">Dispatched</div>
       <div class="filter-chip" data-filter="delivered" data-group="d">Delivered</div>
+    </div>
+    <div class="controls-2">
+      <div class="period-bar" id="dPeriodBar"></div>
+      <button class="export-btn" id="dExportBtn">Export shown (CSV)</button>
     </div>
     <div class="board" id="dBoard"><div class="empty">Loading dispatch log...</div></div>
   </div>
@@ -329,8 +364,9 @@
 
       <div class="assign-row" id="rAssignRow">
         <input id="fReturnDate" type="date">
-        <input id="fReceiver" placeholder="Return receiver (who received it)">
+        <input id="fReceiver" placeholder="Return receiver (you)" disabled title="Locked to your signed-in name">
         <input id="fReturnAgent" placeholder="Return agent (who brought it back)">
+        <textarea id="rRemark" placeholder="Remark (optional) — e.g. damaged, wrong size, box opened…" rows="1"></textarea>
         <button class="btn-dispatch" id="rSubmitBtn" disabled>Log Return</button>
         <button class="btn-clear" id="rClearBtn">Clear</button>
       </div>
@@ -341,6 +377,10 @@
       <div class="filter-chip active" data-filter="all" data-group="r">All</div>
       <div class="filter-chip" data-filter="matched" data-group="r">Matched</div>
       <div class="filter-chip" data-filter="unmatched" data-group="r">Unmatched</div>
+    </div>
+    <div class="controls-2">
+      <div class="period-bar" id="rPeriodBar"></div>
+      <button class="export-btn secondary" id="rExportBtn">Export shown (CSV)</button>
     </div>
     <div class="board" id="rBoard"><div class="empty">Loading returns log...</div></div>
   </div>
@@ -362,14 +402,17 @@
     </div>
 
     <div class="report-toolbar">
-      <div class="range-chip active" data-range="all">All time</div>
-      <div class="range-chip" data-range="7">Last 7 days</div>
-      <div class="range-chip" data-range="30">Last 30 days</div>
+      <div class="period-bar" id="repPeriodBar"></div>
       <button class="export-btn" id="exportDispatchBtn">Export Dispatch CSV</button>
       <button class="export-btn secondary" id="exportReturnsBtn">Export Returns CSV</button>
     </div>
 
     <div class="summary-grid" id="summaryGrid"></div>
+
+    <div class="report-section">
+      <h3>Month by Month</h3>
+      <table class="report-table" id="monthTable"><tbody></tbody></table>
+    </div>
 
     <div class="report-section">
       <h3>Orders by Delivery Agent</h3>
@@ -425,97 +468,351 @@
   </div>
 </div>
 
+<div id="printArea"></div>
 <div class="toast" id="toast"></div>
 
 <script>
 /* =====================================================================
-   STEP A: PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE.
-
-   This app has no database of its own — every read and write below
-   goes straight to the real tabs in your Google Sheet (SFL Dispatch,
-   SFL Returns, USER, DELIVERY AGENT, DISPATCH LOCATION, plus a LOG
-   tab the script manages for you). Nothing is cached or hidden.
+   SETUP — the only line you may ever need to change.
+   Paste your Apps Script Web App URL (ends in /exec) between the quotes.
+   (If you host this page INSIDE Apps Script instead, leave it as is —
+   the page then talks to the script directly and ignores this URL.)
    ===================================================================== */
-const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzgJRwVlXMhsLA8-yv8eYAuyAGCiXawvxGJZzQoThc35l--tWO-o7cpzq3gbH6Eo7aT/exec";
-
-async function apiGet(action, params){
-  const qs = new URLSearchParams({ action, ...(params||{}) }).toString();
-  const res = await fetch(`${SHEET_API_URL}?${qs}`);
-  const data = await res.json();
-  if(data && data.error) throw new Error(data.error);
-  return data;
-}
-async function apiPost(action, payload){
-  // mode:'no-cors' + text/plain avoids Apps Script's CORS preflight, which it
-  // doesn't support — the request still reaches the script and runs fine,
-  // we just can't read a response body back (doPost's reply is one-way here).
-  await fetch(SHEET_API_URL, {
-    method: 'POST',
-    mode: 'no-cors',
-    headers: {'Content-Type': 'text/plain'},
-    body: JSON.stringify({ action, ...payload })
-  });
-}
-
-const api = {
-  // Accounts & login — the password/PIN never lives in this HTML file. Every
-  // login attempt is checked by the Apps Script against the USER sheet tab,
-  // which only ever answers with yes/no + the account's name and role.
-  login: (username, password) => apiGet('login', { username, password }),
-  listUsers: async () => (await apiGet('listUsers')).items || [],
-  upsertUser: (user) => apiPost('upsertUser', { user }),
-  deleteUser: (username) => apiPost('deleteUser', { username }),
-
-  listDispatch: async () => (await apiGet('listDispatch')).items || [],
-  addDispatch: (batch) => apiPost('addDispatch', { batch }),
-  updateDispatch: (batchId, patch) => apiPost('updateDispatch', { batchId, patch }),
-  deleteDispatch: (batchId) => apiPost('deleteDispatch', { batchId }),
-
-  listReturns: async () => (await apiGet('listReturns')).items || [],
-  addReturn: (ret) => apiPost('addReturn', { ret }),
-  updateReturn: (identity, patch) => apiPost('updateReturn', { identity, patch }),
-  deleteReturn: (identity) => apiPost('deleteReturn', { identity }),
-
-  listAgents: async () => (await apiGet('listAgents')).items || [],
-  listLocations: async () => (await apiGet('listLocations')).items || [],
-
-  addLog: (entry) => apiPost('addLog', { entry }),
-  listLog: async () => (await apiGet('listLog')).items || [],
-
-  getMagentoIndex: () => apiGet('getMagentoIndex'),
-  setMagentoIndex: (data, importedAt) => apiPost('setMagentoIndex', { data, importedAt })
-};
+const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbyVNngT7l_sNyn5AOSTj-kvBB-zKfsljjojBmAbwEmwr3f8FZ-7ZeDv_VoKD9s2eDIc/exec';
 /* ===================== END OF SETUP SECTION ===================== */
 
+const HAS_GAS = (typeof google !== 'undefined') && google.script && google.script.run;
+
+/* ---------- small safe-storage helpers (private windows can block storage) ---------- */
+const store = {
+  get(k){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; }catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} }
+};
+const K_SESSION = 'sfl_session_v7', K_CACHE = 'sfl_cache_v7', K_QUEUE = 'sfl_queue_v7', K_MAGENTO = 'sfl_magento_v7';
+
+/* ---------- transport: one function for every server call ---------- */
+let session = store.get(K_SESSION); // {token,name,role,username}
+
+async function callApi(action, args){
+  const body = JSON.stringify(Object.assign({ action, token: session ? session.token : '' }, args || {}));
+  let json;
+  if(HAS_GAS){
+    const text = await new Promise((resolve, reject)=>{
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(err=>{
+        const e = new Error(err && err.message ? err.message : String(err)); e.transient = true; reject(e);
+      }).apiEntry(body);
+    });
+    json = JSON.parse(text);
+  } else {
+    const ctrl = new AbortController();
+    const timer = setTimeout(()=>ctrl.abort(), 45000);
+    try{
+      const res = await fetch(SHEET_API_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body, signal: ctrl.signal });
+      const text = await res.text();
+      try{ json = JSON.parse(text); }catch(e){ const er = new Error('Server did not return data (is the latest script deployed?)'); er.transient = true; throw er; }
+    }catch(e){
+      if(!e.transient) e.transient = true; // network error / timeout
+      throw e;
+    }finally{ clearTimeout(timer); }
+  }
+  if(!json.ok){
+    const e = new Error(json.error || 'Server error'); e.code = json.code || 'SERVER';
+    throw e;
+  }
+  return json.data;
+}
+
+/* ---------- app state ---------- */
 let batches = [];
 let returns = [];
+let agents = [], locations = [];
 let dScanned = [];
 let rSkus = [];
 let dFilter = 'all';
 let rFilter = 'all';
-let magentoIndex = {}; // orderNumber -> {status, date, customer, grandTotal, invoiced, refunded, qty, location}
+let magentoIndex = {};
 let magentoImportedAt = null;
+let currentUser = null; // {name, role, username}
+let editingBatchId = null;
+let editingReturnId = null;
+let editingUserId = null;
+let users = [];
+let activityLog = [];
+let ordIdx = { d:{}, r:{} };
 
 const toast = document.getElementById('toast');
-function showToast(msg){ toast.textContent = msg; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'), 1800); }
-function fmtDateTime(ts){ const dt = new Date(ts); return dt.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) + ' ' + dt.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'}); }
+function showToast(msg){ toast.textContent = msg; toast.classList.add('show'); clearTimeout(showToast.t); showToast.t = setTimeout(()=>toast.classList.remove('show'), 2200); }
+function pad2(n){ return String(n).padStart(2,'0'); }
+function fmtDateTime(ts){ const dt = new Date(ts); if(!ts || isNaN(dt)) return '—'; return dt.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) + ' ' + dt.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'}); }
 function fmtDate(d){ if(!d) return '—'; const dt = new Date(d + 'T00:00:00'); if(isNaN(dt)) return d; return dt.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}); }
-function escapeHtml(str){ if(!str) return ''; return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-function todayStr(){ return new Date().toISOString().slice(0,10); }
+function isoLocal(ts){ const d = new Date(ts); if(!ts || isNaN(d)) return ''; return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+function escapeHtml(str){ if(str === null || str === undefined) return ''; return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function todayStr(){ const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+function dayTs(str){ if(!str) return 0; const p = String(str).slice(0,10).split('-').map(Number); if(p.length < 3 || p.some(isNaN)) return 0; return new Date(p[0], p[1]-1, p[2]).getTime(); }
+function monthKey(ts){ const d = new Date(ts); return isNaN(d) || !ts ? 'Unknown' : `${d.getFullYear()}-${pad2(d.getMonth()+1)}`; }
 function parseCurrency(str){ if(!str) return null; const n = parseFloat(String(str).replace(/[^0-9.\-]/g,'')); return isNaN(n) ? null : n; }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function hashStr(s){ let h = 5381; for(let i=0;i<s.length;i++) h = ((h<<5)+h) ^ s.charCodeAt(i); return (h>>>0).toString(36); }
+function ordinal(n){ const s = ['th','st','nd','rd'], v = n % 100; return n + (s[(v-20)%10] || s[v] || s[0]); }
 function isFlaggedStatus(status){
   if(!status) return false;
   const s = status.toLowerCase();
   return s.includes('cancel') || s.includes('refund') || s.includes('closed') || s.includes('exchang');
 }
+function isAdmin(){ return currentUser && currentUser.role === 'admin'; }
+function isGuest(){ return currentUser && currentUser.role === 'guest'; }
 
-let currentUser = null; // {name, role: 'admin'|'staff'|'guest', username}
-let editingBatchId = null;
-let editingReturnId = null;
-let users = []; // {name, username, role, status} — loaded from the sheet; never holds a password
-let activityLog = [];
+/* ---------- CUSTOM CONFIRM / ALERT ---------- */
+function customConfirm(message){
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `<div class="confirm-box"><p>${escapeHtml(message)}</p>
+      <div class="confirm-actions"><button class="btn-cancel">Cancel</button><button class="btn-danger">Delete</button></div></div>`;
+    document.body.appendChild(overlay);
+    const cleanup = (val)=>{ document.body.removeChild(overlay); resolve(val); };
+    overlay.querySelector('.btn-cancel').addEventListener('click', ()=>cleanup(false));
+    overlay.querySelector('.btn-danger').addEventListener('click', ()=>cleanup(true));
+    overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(false); });
+  });
+}
+function customAlert(message, title){
+  return new Promise((resolve)=>{
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `<div class="confirm-box">
+        ${title ? `<p style="font-weight:700; margin-bottom:6px; font-size:16px;">${escapeHtml(title)}</p>` : ''}
+        <p style="white-space:pre-line;">${escapeHtml(message)}</p>
+        <div class="confirm-actions"><button class="btn-danger" style="flex:1;">OK</button></div></div>`;
+    document.body.appendChild(overlay);
+    const ok = overlay.querySelector('.btn-danger');
+    const cleanup = ()=>{ if(overlay.parentNode) document.body.removeChild(overlay); resolve(true); };
+    ok.addEventListener('click', cleanup);
+    overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(); });
+    setTimeout(()=>ok.focus(), 50);
+  });
+}
 
-/* ---------- AUTH ---------- */
+/* =====================================================================
+   DATA LAYER — cache + background-save queue + sync
+   ===================================================================== */
+let queue = store.get(K_QUEUE) || [];
+let pumping = false, syncing = false, lastSyncAt = 0, lastError = '';
+
+function saveCache(){
+  store.set(K_CACHE, { user: currentUser ? currentUser.username : '', batches, returns, agents, locations, at: lastSyncAt });
+}
+function loadCache(){
+  const c = store.get(K_CACHE);
+  if(!c || !currentUser || c.user !== currentUser.username) return false;
+  batches = c.batches || []; returns = c.returns || []; agents = c.agents || []; locations = c.locations || [];
+  lastSyncAt = c.at || 0;
+  const m = store.get(K_MAGENTO);
+  if(m){ magentoIndex = m.index || {}; magentoImportedAt = m.at || null; }
+  return true;
+}
+
+function rebuildIndex(){
+  const d = {}, r = {};
+  [...batches].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0)).forEach(b => (b.orders||[]).forEach(o => { (d[o] = d[o] || []).push(b); }));
+  returns.forEach(x => { (r[x.orderNumber] = r[x.orderNumber] || []).push(x); });
+  ordIdx = { d, r };
+}
+function ordStat(o){
+  const d = ordIdx.d[o] || [], r = ordIdx.r[o] || [];
+  return { d, r, dispatchN: d.length, returnN: r.length,
+    lastBatch: d.length ? d[d.length-1] : null,
+    lastReturn: r.length ? r.reduce((a,b)=> (b.ts > a.ts ? b : a)) : null };
+}
+function attemptOf(batch, o){ const d = ordIdx.d[o] || []; const i = d.indexOf(batch); return i >= 0 ? i + 1 : 1; }
+
+function dataChanged(){
+  rebuildIndex(); saveCache();
+  renderStats();
+  if(!editingBatchId) renderDBoard();
+  if(!editingReturnId) renderRBoard();
+  const rp = document.getElementById('panel-reports');
+  if(rp && rp.classList.contains('active')) renderReports();
+  renderDScanChips();
+  refreshAgentLocationOptions();
+}
+
+function setSyncUI(){
+  const chip = document.getElementById('syncChip'), btn = document.getElementById('syncBtn');
+  if(!chip) return;
+  const pending = queue.length;
+  btn.disabled = syncing;
+  if(syncing){ chip.className = 'sync-chip busy'; chip.textContent = 'Syncing…'; }
+  else if(pending){ chip.className = 'sync-chip pending'; chip.textContent = `Saving ${pending} change${pending>1?'s':''}…`; }
+  else if(lastError){ chip.className = 'sync-chip err'; chip.textContent = 'Offline — will retry'; }
+  else { chip.className = 'sync-chip'; chip.textContent = lastSyncAt ? 'Synced ' + new Date(lastSyncAt).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}) : 'Not synced yet'; }
+}
+
+function applyBootstrap(data){
+  batches = groupDispatchRows(data.dispatch || []);
+  returns = groupReturnRows(data.returns || []);
+  agents = data.agents || []; locations = data.locations || [];
+  if(data.magentoData){
+    try{ magentoIndex = JSON.parse(data.magentoData) || {}; }catch(e){ magentoIndex = {}; }
+    magentoImportedAt = data.magentoImportedAt || null;
+    store.set(K_MAGENTO, { index: magentoIndex, at: magentoImportedAt });
+  } else if(!data.magentoImportedAt){ magentoIndex = {}; magentoImportedAt = null; }
+  updateSyncStatus();
+}
+
+async function syncNow(opts){
+  opts = opts || {};
+  if(!session || syncing) return;
+  if(queue.length){ await pump(); if(queue.length) return; } // never overwrite unsaved changes
+  syncing = true; setSyncUI();
+  try{
+    const data = await callApi('bootstrap', { magentoSeen: magentoImportedAt ? String(magentoImportedAt) : '' });
+    applyBootstrap(data);
+    lastSyncAt = Date.now(); lastError = '';
+    dataChanged();
+    if(opts.manual) showToast('Up to date');
+  }catch(e){
+    if(e.code === 'AUTH'){ forceLogout('Your session expired. Please sign in again.'); return; }
+    lastError = e.message || 'error';
+    if(opts.manual) showToast('Could not reach the server. Showing saved data.');
+    console.error(e);
+  }finally{ syncing = false; setSyncUI(); }
+}
+
+/* Writes: change the screen instantly, save to the Sheet in the background, one at a time */
+function enqueue(action, args){
+  queue.push({ opId: uid(), action, args });
+  store.set(K_QUEUE, queue);
+  setSyncUI();
+  pump();
+}
+async function pump(){
+  if(pumping || !session) return;
+  pumping = true;
+  try{
+    while(queue.length){
+      const op = queue[0];
+      try{
+        await callApi(op.action, Object.assign({}, op.args, { opId: op.opId }));
+        queue.shift(); store.set(K_QUEUE, queue); lastError = ''; setSyncUI();
+      }catch(e){
+        if(e.code === 'AUTH'){ lastError = 'auth'; setSyncUI(); forceLogout('Your session expired. Sign in again — your unsaved changes will be sent automatically.'); break; }
+        if(e.transient){ lastError = e.message || 'offline'; setSyncUI(); setTimeout(pump, 6000); break; }
+        // The server understood but refused (e.g. permission) — drop it and restore the true data
+        queue.shift(); store.set(K_QUEUE, queue);
+        showToast(e.message || 'A change could not be saved');
+        console.error(e);
+        syncing = false; setTimeout(()=>syncNow(), 300);
+      }
+    }
+  } finally { pumping = false; setSyncUI(); }
+  if(!queue.length && session){ clearTimeout(pump.t); pump.t = setTimeout(()=>syncNow(), 1200); } // quiet refresh after saving
+}
+
+setInterval(()=>{
+  if(!session || document.hidden || syncing || pumping || queue.length || editingBatchId || editingReturnId || editingUserId) return;
+  syncNow();
+}, 45000);
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden && session && Date.now() - lastSyncAt > 20000) syncNow();
+});
+window.addEventListener('online', ()=>{ if(session){ pump(); syncNow(); } });
+document.getElementById('syncBtn').addEventListener('click', ()=>syncNow({ manual:true }));
+
+/* ---------- grouping sheet rows into cards ---------- */
+function groupDispatchRows(rows){
+  const byBatch = {}, order = [];
+  rows.forEach(r=>{
+    if(!byBatch[r.batchId]){
+      byBatch[r.batchId] = { id: r.batchId, orders: [], dispatcher: r.dispatcher, agent: r.agent, location: r.location,
+        status: r.status, remark: r.remark || '', createdAt: Number(r.dispatchDate) || 0 };
+      order.push(r.batchId);
+    }
+    const b = byBatch[r.batchId];
+    if(!b.remark && r.remark) b.remark = r.remark;
+    b.orders.push(r.orderNumber);
+  });
+  return order.map(id=>byBatch[id]).sort((a,b)=> (b.createdAt||0) - (a.createdAt||0));
+}
+function groupReturnRows(rows){
+  const map = new Map();
+  rows.forEach(r=>{
+    const key = [r.orderNumber, r.returnDate, r.receiver].join('|');
+    let g = map.get(key);
+    if(!g){
+      g = { id: 'r' + hashStr(key), orderNumber: r.orderNumber, returnDate: r.returnDate, receiver: r.receiver,
+        returnAgent: r.returnAgent, matched: !!r.matched, remark: '', skus: [], ts: dayTs(r.returnDate) };
+      map.set(key, g);
+    }
+    if(!g.remark && r.remark) g.remark = r.remark;
+    g.skus.push({ sku: r.sku, qty: Number(r.qty) || 1 });
+  });
+  return [...map.values()].reverse(); // newest logged first
+}
+
+/* =====================================================================
+   DATE / MONTH PERIOD CONTROLS (used on Dispatch, Returns and Reports)
+   ===================================================================== */
+function makePeriod(barId, onChange){
+  const st = { mode:'all', month: todayStr().slice(0,7), from:'', to:'' };
+  const bar = document.getElementById(barId);
+  bar.innerHTML = `
+    <select class="pm" title="Show records from…">
+      <option value="all">All dates</option><option value="today">Today</option>
+      <option value="7">Last 7 days</option><option value="30">Last 30 days</option>
+      <option value="thismonth">This month</option><option value="month">Pick a month…</option>
+      <option value="range">Pick dates…</option>
+    </select>
+    <input type="month" class="pmonth" style="display:none;">
+    <input type="date" class="pfrom" style="display:none;" title="From date">
+    <input type="date" class="pto" style="display:none;" title="To date">`;
+  const sel = bar.querySelector('.pm'), mo = bar.querySelector('.pmonth'), fr = bar.querySelector('.pfrom'), to = bar.querySelector('.pto');
+  mo.value = st.month;
+  const sync = ()=>{
+    st.mode = sel.value; st.month = mo.value; st.from = fr.value; st.to = to.value;
+    mo.style.display = st.mode === 'month' ? '' : 'none';
+    fr.style.display = to.style.display = st.mode === 'range' ? '' : 'none';
+    onChange();
+  };
+  [sel, mo, fr, to].forEach(el => el.addEventListener('change', sync));
+  return st;
+}
+function periodBounds(st){
+  const now = new Date(), sod = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(), DAY = 86400000;
+  switch(st.mode){
+    case 'today': return [sod, sod + DAY];
+    case '7': return [sod - 6*DAY, sod + DAY];
+    case '30': return [sod - 29*DAY, sod + DAY];
+    case 'thismonth': return [new Date(now.getFullYear(), now.getMonth(), 1).getTime(), new Date(now.getFullYear(), now.getMonth()+1, 1).getTime()];
+    case 'month': {
+      const p = (st.month || '').split('-').map(Number);
+      if(p.length < 2 || isNaN(p[0]) || isNaN(p[1])) return [-Infinity, Infinity];
+      return [new Date(p[0], p[1]-1, 1).getTime(), new Date(p[0], p[1], 1).getTime()];
+    }
+    case 'range': return [st.from ? dayTs(st.from) : -Infinity, st.to ? dayTs(st.to) + DAY : Infinity];
+    default: return [-Infinity, Infinity];
+  }
+}
+function inPeriod(st, ts){ if(st.mode === 'all') return true; const [a,b] = periodBounds(st); return ts >= a && ts < b; }
+function periodLabel(st){
+  switch(st.mode){
+    case 'today': return todayStr();
+    case '7': return 'last7days'; case '30': return 'last30days';
+    case 'thismonth': return todayStr().slice(0,7);
+    case 'month': return st.month || 'month';
+    case 'range': return (st.from || 'start') + '_to_' + (st.to || 'now');
+    default: return 'all';
+  }
+}
+
+const dPeriod = makePeriod('dPeriodBar', ()=>renderDBoard());
+const rPeriod = makePeriod('rPeriodBar', ()=>renderRBoard());
+const repPeriod = makePeriod('repPeriodBar', ()=>renderReports());
+
+/* =====================================================================
+   AUTH
+   ===================================================================== */
 document.getElementById('roleToggleStaff').addEventListener('click', ()=>switchLoginRole('staff'));
 document.getElementById('roleToggleAdmin').addEventListener('click', ()=>switchLoginRole('admin'));
 function switchLoginRole(role){
@@ -525,41 +822,33 @@ function switchLoginRole(role){
   document.getElementById('adminForm').classList.toggle('active', role==='admin');
   document.getElementById('loginError').textContent = '';
 }
-
-document.getElementById('staffSubmitBtn').addEventListener('click', submitStaffLogin);
-document.getElementById('teamPassword').addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); submitStaffLogin(); } });
-document.getElementById('teamUsername').addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); submitStaffLogin(); } });
-async function submitStaffLogin(){
-  const username = document.getElementById('teamUsername').value.trim();
-  const password = document.getElementById('teamPassword').value;
-  if(!username || !password){ document.getElementById('loginError').textContent = 'Enter your username and password.'; return; }
-  await attemptLogin(username, password, 'staffSubmitBtn');
+function wireLogin(userId, passId, btnId){
+  const go = async ()=>{
+    const username = document.getElementById(userId).value.trim();
+    const password = document.getElementById(passId).value;
+    if(!username || !password){ document.getElementById('loginError').textContent = 'Enter your username and password.'; return; }
+    await attemptLogin(username, password, btnId);
+  };
+  document.getElementById(btnId).addEventListener('click', go);
+  [userId, passId].forEach(id => document.getElementById(id).addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); go(); } }));
 }
+wireLogin('teamUsername','teamPassword','staffSubmitBtn');
+wireLogin('adminUser','adminPass','adminSubmitBtn');
 
-document.getElementById('adminSubmitBtn').addEventListener('click', submitAdminLogin);
-document.getElementById('adminPass').addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); submitAdminLogin(); } });
-document.getElementById('adminUser').addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); submitAdminLogin(); } });
-async function submitAdminLogin(){
-  const username = document.getElementById('adminUser').value.trim();
-  const password = document.getElementById('adminPass').value;
-  if(!username || !password){ document.getElementById('loginError').textContent = 'Enter your username and password.'; return; }
-  await attemptLogin(username, password, 'adminSubmitBtn');
-}
-
-// Both login tabs funnel through here — the Apps Script (not this file) checks
-// the username/password against the "USER" sheet tab and tells us the role.
 async function attemptLogin(username, password, btnId){
   const btn = document.getElementById(btnId);
   const prevText = btn.textContent;
   btn.disabled = true; btn.textContent = 'Checking...';
   document.getElementById('loginError').textContent = '';
   try{
-    const result = await api.login(username, password);
+    const result = await callApi('login', { username, password });
     if(!result || !result.success){
-      document.getElementById('loginError').textContent = 'Incorrect username or password. Ask Admin if you need an account.';
+      document.getElementById('loginError').textContent = result && result.reason === 'inactive' ? 'This account is not active. Ask Admin.' : 'Incorrect username or password. Ask Admin if you need an account.';
       return;
     }
-    loginAs(result.name, result.role, result.username || username);
+    session = { token: result.token, name: result.name, role: result.role, username: result.username || username };
+    store.set(K_SESSION, session);
+    loginAs(session);
   }catch(e){
     document.getElementById('loginError').textContent = 'Could not reach the server. Check your connection and try again.';
     console.error(e);
@@ -568,63 +857,66 @@ async function attemptLogin(username, password, btnId){
   }
 }
 
-function loginAs(name, role, username){
-  currentUser = {name, role, username};
+function loginAs(sess){
+  currentUser = { name: sess.name, role: sess.role, username: sess.username };
   document.getElementById('loginOverlay').style.display = 'none';
   document.getElementById('appWrap').style.display = 'block';
-  document.getElementById('userNameLabel').textContent = name;
+  document.getElementById('userNameLabel').textContent = sess.name;
   const pill = document.getElementById('userRolePill');
-  pill.textContent = role;
-  pill.className = 'role-pill' + (role === 'admin' ? ' admin' : '');
+  pill.textContent = sess.role;
+  pill.className = 'role-pill' + (sess.role === 'admin' ? ' admin' : '');
 
-  // Dispatcher name is always locked to whoever is signed in
-  const fDispatcherEl = document.getElementById('fDispatcher');
-  fDispatcherEl.value = name;
-  fDispatcherEl.disabled = true;
+  // The signed-in staff name is locked on BOTH the dispatch and the return form
+  const fDisp = document.getElementById('fDispatcher'); fDisp.value = sess.name; fDisp.disabled = true;
+  const fRecv = document.getElementById('fReceiver'); fRecv.value = sess.name; fRecv.disabled = true;
 
-  // Admin-only tabs
-  document.getElementById('usersTabBtn').style.display = role === 'admin' ? 'block' : 'none';
-  document.getElementById('logTabBtn').style.display = role === 'admin' ? 'block' : 'none';
-
+  document.getElementById('usersTabBtn').style.display = sess.role === 'admin' ? 'block' : 'none';
+  document.getElementById('logTabBtn').style.display = sess.role === 'admin' ? 'block' : 'none';
   applyRoleVisibility();
-  refreshAgentLocationOptions();
-  renderDBoard(); renderRBoard();
-  if(role !== 'guest') dScanInput.focus();
-  logActivity('login', `${name} (${role}) signed in`);
+
+  loadCache();                 // show last known data instantly
+  rebuildIndex(); renderStats(); renderDBoard(); renderRBoard(); refreshAgentLocationOptions(); updateSyncStatus();
+  setSyncUI();
+  syncNow();                   // then refresh in the background
+  if(sess.role === 'admin') loadUsers();
+  if(sess.role !== 'guest') dScanInput.focus();
 }
 
 function applyRoleVisibility(){
-  const isGuest = currentUser && currentUser.role === 'guest';
-  document.getElementById('dispatchEntryPanel').style.display = isGuest ? 'none' : 'block';
-  document.getElementById('returnsEntryPanel').style.display = isGuest ? 'none' : 'block';
-  const dNote = document.getElementById('dispatchViewOnlyNote');
-  const rNote = document.getElementById('returnsViewOnlyNote');
-  if(dNote) dNote.style.display = isGuest ? 'block' : 'none';
-  if(rNote) rNote.style.display = isGuest ? 'block' : 'none';
-  document.querySelectorAll('.sync-card').forEach(el => { el.style.display = isGuest ? 'none' : 'block'; });
+  const guest = isGuest();
+  document.getElementById('dispatchEntryPanel').style.display = guest ? 'none' : 'block';
+  document.getElementById('returnsEntryPanel').style.display = guest ? 'none' : 'block';
+  document.getElementById('dispatchViewOnlyNote').style.display = guest ? 'block' : 'none';
+  document.getElementById('returnsViewOnlyNote').style.display = guest ? 'block' : 'none';
+  document.querySelectorAll('.sync-card').forEach(el => { el.style.display = guest ? 'none' : 'block'; });
 }
 
-document.getElementById('logoutBtn').addEventListener('click', ()=>{
-  if(currentUser) logActivity('logout', `${currentUser.name} signed out`);
-  currentUser = null;
+function showLogin(message){
+  currentUser = null; session = null; store.del(K_SESSION);
   editingBatchId = null; editingReturnId = null; editingUserId = null;
   document.getElementById('appWrap').style.display = 'none';
   document.getElementById('loginOverlay').style.display = 'flex';
-  document.getElementById('teamUsername').value = '';
-  document.getElementById('teamPassword').value = '';
-  document.getElementById('adminUser').value = '';
-  document.getElementById('adminPass').value = '';
-  document.getElementById('loginError').textContent = '';
+  ['teamUsername','teamPassword','adminUser','adminPass'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('loginError').textContent = message || '';
+}
+function forceLogout(message){
+  // keep the pending queue; it is sent after the next sign-in
+  const q = queue; showLogin(message); queue = q;
+}
+document.getElementById('logoutBtn').addEventListener('click', async ()=>{
+  if(queue.length){ await pump(); }
+  if(queue.length){ showToast('Still saving changes — try again in a moment'); return; }
+  try{ await callApi('addLog', { entry: { action:'logout', details: `${currentUser.name} signed out` } }); }catch(e){}
+  store.del(K_CACHE);
+  showLogin('');
 });
 
-function isAdmin(){ return currentUser && currentUser.role === 'admin'; }
-function isGuest(){ return currentUser && currentUser.role === 'guest'; }
-
-/* ---------- USER MANAGEMENT (Admin only) ---------- */
+/* =====================================================================
+   USER MANAGEMENT (Admin only)
+   ===================================================================== */
 async function loadUsers(){
-  try{
-    users = await api.listUsers(); // [{name, username, role, status}] — no passwords sent to the browser
-  }catch(e){ users = []; console.error(e); }
+  try{ users = await callApi('listUsers'); }catch(e){ users = []; console.error(e); }
+  if(document.getElementById('panel-users').classList.contains('active')) renderUsersBoard();
 }
 
 document.getElementById('createUserBtn').addEventListener('click', async ()=>{
@@ -633,70 +925,38 @@ document.getElementById('createUserBtn').addEventListener('click', async ()=>{
   const password = document.getElementById('newUserPassword').value;
   const role = document.getElementById('newUserRole').value;
   if(!name || !username || !password){ showToast('Fill in name, username, and password'); return; }
-  if(users.some(u=>u.username.toLowerCase() === username.toLowerCase())){
-    showToast('That username is already taken'); return;
-  }
-  await api.upsertUser({ name, username, password, role, status: 'active' });
-  await loadUsers();
-  logActivity('user_created', `Created ${role} account "${username}" (${name})`);
-  document.getElementById('newUserName').value = '';
-  document.getElementById('newUserUsername').value = '';
-  document.getElementById('newUserPassword').value = '';
-  renderUsersBoard();
-  showToast('User created');
+  if(users.some(u=>u.username.toLowerCase() === username.toLowerCase())){ showToast('That username is already taken'); return; }
+  try{
+    await callApi('upsertUser', { user: { name, username, password, role, status: 'active' }, log: { action:'user_created', details:`Created ${role} account "${username}" (${name})` } });
+    await loadUsers();
+    ['newUserName','newUserUsername','newUserPassword'].forEach(id => document.getElementById(id).value = '');
+    renderUsersBoard(); showToast('User created');
+  }catch(e){ showToast(e.message || 'Could not create user'); }
 });
 
-let editingUserId = null;
 function renderUsersBoard(){
   const board = document.getElementById('usersBoard');
-  // Admin accounts are managed directly in the sheet, not from this board —
-  // keeps anyone from accidentally editing/removing the only Admin login.
   const manageable = users.filter(u => u.role !== 'admin');
   if(manageable.length === 0){ board.innerHTML = '<div class="empty">No team accounts yet. Create one above.</div>'; return; }
   board.innerHTML = manageable.map(u => {
     if(editingUserId === u.username){
-      return `
-        <div class="batch-card">
-          <div class="batch-top">
-            <div class="batch-left">
-              <div class="batch-info"><div class="agent">Editing "${escapeHtml(u.username)}"</div></div>
-            </div>
-          </div>
+      return `<div class="batch-card"><div class="batch-top"><div class="batch-left"><div class="batch-info"><div class="agent">Editing "${escapeHtml(u.username)}"</div></div></div></div>
           <div class="edit-form">
-            <input id="editUserName-${u.username}" value="${escapeHtml(u.name)}" placeholder="Full name">
-            <input id="editUserPassword-${u.username}" placeholder="New password (leave blank to keep current)">
-            <select id="editUserRole-${u.username}">
+            <input id="editUserName-${escapeHtml(u.username)}" value="${escapeHtml(u.name)}" placeholder="Full name">
+            <input id="editUserPassword-${escapeHtml(u.username)}" placeholder="New password (leave blank to keep current)">
+            <select id="editUserRole-${escapeHtml(u.username)}">
               <option value="staff" ${u.role==='staff'?'selected':''}>Normal user (add &amp; view)</option>
               <option value="guest" ${u.role==='guest'?'selected':''}>Guest (view only)</option>
             </select>
-            <div class="edit-actions">
-              <button class="btn-save" onclick="saveUserEdit('${u.username}')">Save</button>
-              <button onclick="cancelEditUser()">Cancel</button>
-            </div>
-          </div>
-        </div>
-      `;
+            <div class="edit-actions"><button class="btn-save" onclick="saveUserEdit('${escapeHtml(u.username)}')">Save</button><button onclick="cancelEditUser()">Cancel</button></div>
+          </div></div>`;
     }
-    return `
-    <div class="batch-card">
-      <div class="batch-top">
-        <div class="batch-left">
-          <div class="batch-info">
-            <div class="agent">${escapeHtml(u.name)}</div>
-            <div class="meta-line">Username: ${escapeHtml(u.username)}</div>
-          </div>
-        </div>
-        <div class="status-tag ${u.role === 'staff' ? 'matched' : 'unmatched'}">${u.role}</div>
-      </div>
-      <div class="batch-actions">
-        <button onclick="editUser('${u.username}')">Edit</button>
-        <button onclick="removeUser('${u.username}')">Remove</button>
-      </div>
-    </div>
-  `;
+    return `<div class="batch-card"><div class="batch-top"><div class="batch-left"><div class="batch-info">
+            <div class="agent">${escapeHtml(u.name)}</div><div class="meta-line">Username: ${escapeHtml(u.username)}</div></div></div>
+        <div class="status-tag ${u.role === 'staff' ? 'matched' : 'unmatched'}">${u.role}</div></div>
+      <div class="batch-actions"><button onclick="editUser('${escapeHtml(u.username)}')">Edit</button><button onclick="removeUser('${escapeHtml(u.username)}')">Remove</button></div></div>`;
   }).join('');
 }
-
 window.editUser = (username)=>{ editingUserId = username; renderUsersBoard(); };
 window.cancelEditUser = ()=>{ editingUserId = null; renderUsersBoard(); };
 window.saveUserEdit = async (username)=>{
@@ -704,90 +964,54 @@ window.saveUserEdit = async (username)=>{
   const newName = document.getElementById('editUserName-'+username).value.trim();
   const newPassword = document.getElementById('editUserPassword-'+username).value;
   const newRole = document.getElementById('editUserRole-'+username).value;
-  // Leaving the password field blank keeps the existing PIN — the script only
-  // overwrites it in the sheet when a new value is actually sent.
-  await api.upsertUser({
-    name: newName || user.name,
-    username,
-    password: newPassword || '',
-    role: newRole,
-    status: user.status || 'active'
-  });
-  await loadUsers();
-  editingUserId = null;
-  renderUsersBoard();
-  logActivity('user_edited', `Updated account "${username}"${newPassword ? ' (password changed)' : ''} — role: ${newRole}`);
-  showToast('User updated');
+  try{
+    await callApi('upsertUser', { user: { name: newName || user.name, username, password: newPassword || '', role: newRole, status: user.status || 'active' },
+      log: { action:'user_edited', details:`Updated account "${username}"${newPassword ? ' (password changed)' : ''} — role: ${newRole}` } });
+    await loadUsers(); editingUserId = null; renderUsersBoard(); showToast('User updated');
+  }catch(e){ showToast(e.message || 'Could not update user'); }
 };
-
 window.removeUser = async (username)=>{
   const ok = await customConfirm(`Remove team account "${username}"? They won't be able to sign in anymore.`);
   if(!ok) return;
-  await api.deleteUser(username);
-  users = users.filter(u => u.username !== username);
-  logActivity('user_removed', `Removed account "${username}"`);
-  renderUsersBoard();
-  showToast('User removed');
+  try{
+    await callApi('deleteUser', { username, log: { action:'user_removed', details:`Removed account "${username}"` } });
+    users = users.filter(u => u.username !== username); renderUsersBoard(); showToast('User removed');
+  }catch(e){ showToast(e.message || 'Could not remove user'); }
 };
 
-/* ---------- ACTIVITY LOG (audit trail) — lives in the "LOG" sheet tab ---------- */
-async function logActivity(action, details){
-  try{
-    const entry = {
-      action, details,
-      user: currentUser ? currentUser.name : 'system',
-      role: currentUser ? currentUser.role : ''
-    };
-    await api.addLog(entry);
-    activityLog.unshift({ ...entry, timestamp: Date.now() });
-    const logPanel = document.getElementById('panel-log');
-    if(logPanel && logPanel.classList.contains('active')) renderLogBoard();
-  }catch(e){ console.error('Activity log error', e); }
-}
-
+/* ---------- ACTIVITY LOG (admin) ---------- */
 async function loadActivityLog(){
-  try{
-    const loaded = await api.listLog();
-    loaded.sort((a,b)=> new Date(b.timestamp||0) - new Date(a.timestamp||0));
-    activityLog = loaded;
-  }catch(e){ activityLog = []; console.error(e); }
+  try{ activityLog = await callApi('listLog'); }catch(e){ activityLog = []; console.error(e); }
+  renderLogBoard();
 }
-
 function renderLogBoard(){
   const q = document.getElementById('logSearchInput').value.trim().toLowerCase();
-  const filtered = activityLog.filter(entry=>{
-    const hay = [entry.user, entry.action, entry.details].join(' ').toLowerCase();
-    return !q || hay.includes(q);
-  });
+  const filtered = activityLog.filter(entry => !q || [entry.user, entry.action, entry.details].join(' ').toLowerCase().includes(q));
   const board = document.getElementById('logBoard');
   if(filtered.length === 0){ board.innerHTML = '<div class="empty">No activity logged yet.</div>'; return; }
   board.innerHTML = filtered.map(entry => `
-    <div class="batch-card">
-      <div class="batch-top">
-        <div class="batch-info">
-          <div class="agent">${escapeHtml(entry.details)}</div>
-          <div class="meta-line">${escapeHtml(entry.user)} (${escapeHtml(entry.role)}) &middot; ${fmtDateTime(entry.timestamp)}</div>
-        </div>
-      </div>
-    </div>
-  `).join('');
+    <div class="batch-card"><div class="batch-top"><div class="batch-info">
+      <div class="agent">${escapeHtml(entry.details)}</div>
+      <div class="meta-line">${escapeHtml(entry.user)} (${escapeHtml(entry.role)}) &middot; ${fmtDateTime(entry.timestamp)}</div>
+    </div></div></div>`).join('');
 }
 document.getElementById('logSearchInput').addEventListener('input', renderLogBoard);
 
-/* ---------- AGENT / LOCATION DROPDOWNS (add-new supported natively via datalist) ---------- */
-async function refreshAgentLocationOptions(){
-  const agentSet = new Set(batches.map(b=>b.agent).filter(Boolean));
-  const locationSet = new Set(batches.map(b=>b.location).filter(Boolean));
-  // Also pull the master DELIVERY AGENT / DISPATCH LOCATION lists straight from the Sheet.
-  try{ (await api.listAgents()).forEach(a=>{ if(a) agentSet.add(a); }); }catch(e){ console.error(e); }
-  try{ (await api.listLocations()).forEach(l=>{ if(l) locationSet.add(l); }); }catch(e){ console.error(e); }
-  const agents = [...agentSet].sort();
-  const locations = [...locationSet].sort();
-  document.getElementById('agentOptions').innerHTML = agents.map(a=>`<option value="${escapeHtml(a)}">`).join('');
-  document.getElementById('locationOptions').innerHTML = locations.map(l=>`<option value="${escapeHtml(l)}">`).join('');
+/* ---------- AGENT / LOCATION DROPDOWNS ---------- */
+function refreshAgentLocationOptions(){
+  const agentSet = new Set([...agents, ...batches.map(b=>b.agent), ...returns.map(r=>r.returnAgent)].filter(Boolean));
+  const locSet = new Set([...locations, ...batches.map(b=>b.location)].filter(Boolean));
+  document.getElementById('agentOptions').innerHTML = [...agentSet].sort().map(a=>`<option value="${escapeHtml(a)}">`).join('');
+  document.getElementById('locationOptions').innerHTML = [...locSet].sort().map(l=>`<option value="${escapeHtml(l)}">`).join('');
+}
+function rememberNames(agent, location){
+  if(agent && !agents.includes(agent)) agents.push(agent);
+  if(location && !locations.includes(location)) locations.push(location);
 }
 
-/* ---------- PRINT DISPATCH MANIFEST ---------- */
+/* =====================================================================
+   PRINT DISPATCH MANIFEST  (fixed: the print area now sits directly under <body>)
+   ===================================================================== */
 window.printBatch = (id)=>{
   const b = batches.find(x=>x.id===id); if(!b) return;
   const area = document.getElementById('printArea');
@@ -801,73 +1025,23 @@ window.printBatch = (id)=>{
       Dispatch Location: ${escapeHtml(b.location)}<br>
       Total Orders: ${(b.orders||[]).length}
     </div>
+    ${b.remark ? `<div class="print-remark"><b>Remark:</b> ${escapeHtml(b.remark)}</div>` : ''}
     <table class="print-table">
-      <thead><tr><th>#</th><th>Order Number</th></tr></thead>
-      <tbody>${(b.orders||[]).map((o,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(o)}</td></tr>`).join('')}</tbody>
+      <thead><tr><th>#</th><th>Order Number</th><th>Attempt</th></tr></thead>
+      <tbody>${(b.orders||[]).map((o,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(o)}</td><td>${attemptOf(b,o)}</td></tr>`).join('')}</tbody>
     </table>
-    <div class="print-sign">
-      <div>Driver / Delivery Agent Signature</div>
-      <div>Date</div>
-    </div>
-  `;
+    <div class="print-sign"><div>Driver / Delivery Agent Signature</div><div>Date</div></div>`;
   document.body.classList.add('printing');
-  window.print();
+  setTimeout(()=>{
+    try{ window.print(); }catch(e){ showToast('Printing is blocked in this window — open the app in a normal browser tab.'); }
+    setTimeout(()=>document.body.classList.remove('printing'), 1500);
+  }, 80);
 };
 window.addEventListener('afterprint', ()=> document.body.classList.remove('printing'));
 
-/* ---------- CUSTOM CONFIRM / ALERT (native confirm()/alert() are blocked in this sandbox) ---------- */
-function customConfirm(message){
-  return new Promise((resolve)=>{
-    const overlay = document.createElement('div');
-    overlay.className = 'confirm-overlay';
-    overlay.innerHTML = `
-      <div class="confirm-box">
-        <p>${escapeHtml(message)}</p>
-        <div class="confirm-actions">
-          <button class="btn-cancel">Cancel</button>
-          <button class="btn-danger">Delete</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-    const cleanup = (val)=>{ document.body.removeChild(overlay); resolve(val); };
-    overlay.querySelector('.btn-cancel').addEventListener('click', ()=>cleanup(false));
-    overlay.querySelector('.btn-danger').addEventListener('click', ()=>cleanup(true));
-    overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(false); });
-  });
-}
-function customAlert(message, title){
-  return new Promise((resolve)=>{
-    const overlay = document.createElement('div');
-    overlay.className = 'confirm-overlay';
-    overlay.innerHTML = `
-      <div class="confirm-box">
-        ${title ? `<p style="font-weight:700; margin-bottom:6px;">${escapeHtml(title)}</p>` : ''}
-        <p>${escapeHtml(message)}</p>
-        <div class="confirm-actions">
-          <button class="btn-danger" style="flex:1;">OK</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-    const cleanup = ()=>{ document.body.removeChild(overlay); resolve(true); };
-    overlay.querySelector('.btn-danger').addEventListener('click', cleanup);
-    overlay.addEventListener('click', (e)=>{ if(e.target === overlay) cleanup(); });
-  });
-}
-
-/* ---------- MAGENTO SYNC ---------- */
-async function loadMagentoIndex(){
-  try{
-    const result = await api.getMagentoIndex();
-    if(result && result.data){
-      magentoIndex = JSON.parse(result.data) || {};
-      magentoImportedAt = result.importedAt || null;
-      updateSyncStatus();
-    }
-  }catch(e){ console.error(e); /* nothing imported yet */ }
-}
-
+/* =====================================================================
+   MAGENTO SYNC
+   ===================================================================== */
 function updateSyncStatus(){
   const count = Object.keys(magentoIndex).length;
   const el = document.getElementById('syncStatus');
@@ -875,11 +1049,10 @@ function updateSyncStatus(){
   if(count === 0){ el.textContent = 'No Magento data imported yet.'; return; }
   el.textContent = `${count} orders indexed · last synced ${magentoImportedAt ? fmtDateTime(magentoImportedAt) : 'unknown'}`;
 }
-
 function mergeMagentoRow(row, type){
   let orderNum, entry;
   if(type === 'grid'){
-    orderNum = (row['Order #'] || '').trim();
+    orderNum = String(row['Order #'] || '').trim();
     if(!orderNum) return;
     entry = magentoIndex[orderNum] || {};
     entry.status = entry.status || row['Status'];
@@ -889,7 +1062,7 @@ function mergeMagentoRow(row, type){
     entry.qty = entry.qty != null ? entry.qty : parseInt(row['Qty Ordered'], 10) || null;
     entry.paymentMethod = entry.paymentMethod || row['Payment Method'];
   } else if(type === 'detail'){
-    orderNum = (row['ID'] || '').trim();
+    orderNum = String(row['ID'] || '').trim();
     if(!orderNum) return;
     entry = magentoIndex[orderNum] || {};
     entry.status = row['Status'] || entry.status;
@@ -904,13 +1077,11 @@ function mergeMagentoRow(row, type){
   } else return;
   magentoIndex[orderNum] = entry;
 }
-
 function detectFileType(headers){
   if(headers.includes('Order #')) return 'grid';
   if(headers.includes('ID') && headers.includes('Bill-to Name')) return 'detail';
   return 'unknown';
 }
-
 function handleMagentoFile(file){
   if(!file) return;
   const name = file.name.toLowerCase();
@@ -918,50 +1089,35 @@ function handleMagentoFile(file){
     const reader = new FileReader();
     reader.onload = (e) => {
       try{
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, {type: 'array'});
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, {defval: ''});
-        processMagentoRows(rows, 'Excel');
-      }catch(err){
-        showToast("Couldn't read that Excel file");
-        console.error(err);
-      }
+        const workbook = XLSX.read(new Uint8Array(e.target.result), {type: 'array'});
+        processMagentoRows(XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {defval: ''}), 'Excel');
+      }catch(err){ showToast("Couldn't read that Excel file"); console.error(err); }
     };
     reader.readAsArrayBuffer(file);
   } else {
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
+    Papa.parse(file, { header: true, skipEmptyLines: true,
       complete: (results) => processMagentoRows(results.data, 'CSV'),
-      error: (err)=>{ showToast('Could not parse that CSV file'); console.error(err); }
-    });
+      error: (err)=>{ showToast('Could not parse that CSV file'); console.error(err); } });
   }
 }
-
 async function processMagentoRows(rows, sourceLabel){
   if(!rows || rows.length === 0){ showToast('No rows found in that file'); return; }
-  const headers = Object.keys(rows[0]);
-  const type = detectFileType(headers);
-  if(type === 'unknown'){
-    showToast(`Couldn't recognize that ${sourceLabel} file's columns`);
-    return;
-  }
+  const type = detectFileType(Object.keys(rows[0]));
+  if(type === 'unknown'){ showToast(`Couldn't recognize that ${sourceLabel} file's columns`); return; }
   rows.forEach(row => mergeMagentoRow(row, type));
   magentoImportedAt = Date.now();
+  showToast('Saving Magento data…');
   try{
-    await api.setMagentoIndex(JSON.stringify(magentoIndex), magentoImportedAt);
+    await callApi('setMagentoIndex', { data: JSON.stringify(magentoIndex), importedAt: magentoImportedAt,
+      log: { action:'magento_import', details:`Imported ${rows.length} Magento rows (${type})` } });
+    store.set(K_MAGENTO, { index: magentoIndex, at: magentoImportedAt });
     updateSyncStatus();
     showToast(`Imported ${rows.length} rows from ${type === 'grid' ? 'Order Grid' : 'Order Detail'} ${sourceLabel} file`);
     renderDScanChips();
     if(document.getElementById('rOrderInput').value.trim()) doLookup();
     if(document.getElementById('panel-reports').classList.contains('active')) renderReports();
-  }catch(e){
-    showToast('Could not save data. It may be too large.');
-    console.error(e);
-  }
+  }catch(e){ showToast('Could not save Magento data.'); console.error(e); }
 }
-
 document.getElementById('fileOrders').addEventListener('change', (e)=> handleMagentoFile(e.target.files[0]));
 document.getElementById('fileDetail').addEventListener('change', (e)=> handleMagentoFile(e.target.files[0]));
 
@@ -973,23 +1129,14 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     btn.classList.add('active');
     document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
     if(btn.dataset.tab === 'reports') renderReports();
-    if(btn.dataset.tab === 'users') renderUsersBoard();
-    if(btn.dataset.tab === 'log') renderLogBoard();
+    if(btn.dataset.tab === 'users'){ renderUsersBoard(); loadUsers(); }
+    if(btn.dataset.tab === 'log'){ renderLogBoard(); loadActivityLog(); }
   });
 });
 
-/* ---------- ORDER INDEX (for return sync) ---------- */
-function getOrderIndex(){
-  const idx = {};
-  batches.forEach(b=>{
-    (b.orders||[]).forEach(o=>{
-      if(!idx[o]) idx[o] = b; // first match
-    });
-  });
-  return idx;
-}
-
-/* ================= DISPATCH TAB ================= */
+/* =====================================================================
+   DISPATCH TAB
+   ===================================================================== */
 const dScanInput = document.getElementById('dScanInput');
 const dScanChips = document.getElementById('dScanChips');
 const dScanCount = document.getElementById('dScanCount');
@@ -998,155 +1145,118 @@ const dDispatchBtn = document.getElementById('dDispatchBtn');
 const dStepLabel = document.getElementById('dStepLabel');
 
 dScanInput.addEventListener('keydown', async (e)=>{
-  if(e.key === 'Enter'){
-    e.preventDefault();
-    const val = dScanInput.value.trim();
-    dScanInput.value = '';
-    if(!val) return;
+  if(e.key !== 'Enter') return;
+  e.preventDefault();
+  const val = dScanInput.value.trim();
+  dScanInput.value = '';
+  if(!val) return;
 
-    const m = magentoIndex[val];
-    if(m && isFlaggedStatus(m.status)){
-      await customAlert(`Order ${val} is marked "${m.status}" in Magento and cannot be dispatched.`, 'Cannot Dispatch');
-      return;
-    }
-    const idx = getOrderIndex();
-    const priorBatch = idx[val];
-    const alreadyReturned = returns.some(r => r.orderNumber === val);
-    if(priorBatch && !alreadyReturned){
-      await customAlert(`Order ${val} was already dispatched on ${fmtDateTime(priorBatch.createdAt)} and hasn't been returned yet. It can't be dispatched again until a return is logged.`, 'Duplicate Order');
-      return;
-    }
-
-    dScanned.push(val);
-    renderDScanChips();
+  const m = magentoIndex[val];
+  if(m && isFlaggedStatus(m.status)){
+    await customAlert(`Order ${val} is marked "${m.status}" in Magento and cannot be dispatched.`, 'Cannot Dispatch');
+    dScanInput.focus(); return;
   }
+  const st = ordStat(val);
+  if(st.dispatchN > st.returnN && st.lastBatch){
+    await customAlert(`Order ${val} was already dispatched on ${fmtDateTime(st.lastBatch.createdAt)} (agent: ${st.lastBatch.agent}) and hasn't been returned yet. It can't be dispatched again until a return is logged.`, 'Duplicate Order');
+    dScanInput.focus(); return;
+  }
+  if(dScanned.includes(val)){ showToast('Already scanned in this batch'); return; }
+
+  if(st.dispatchN >= 1){
+    // Dispatched before AND returned → this is a re-attempt. Tell the dispatcher clearly.
+    const n = st.dispatchN + 1;
+    const lines = [`Order ${val} has been dispatched ${st.dispatchN} time${st.dispatchN>1?'s':''} before and came back.`,
+      `This will be dispatch attempt #${n}.`, '',
+      `Last dispatch: ${fmtDateTime(st.lastBatch.createdAt)} · ${st.lastBatch.agent}`];
+    if(st.lastReturn) lines.push(`Last return: ${fmtDate(st.lastReturn.returnDate)} · received by ${st.lastReturn.receiver}`);
+    if(st.lastReturn && st.lastReturn.remark) lines.push(`Return remark: ${st.lastReturn.remark}`);
+    await customAlert(lines.join('\n'), `⚠ ${ordinal(n)} attempt`);
+  }
+  dScanned.push(val);
+  renderDScanChips();
+  dScanInput.focus();
 });
-dScanInput.focus();
 
 function renderDScanChips(){
   dScanCount.textContent = dScanned.length;
-  const seen = {};
   dScanChips.innerHTML = dScanned.map((o, idx)=>{
-    const isDup = seen[o]; seen[o] = true;
     const m = magentoIndex[o];
     const flagged = m && isFlaggedStatus(m.status);
+    const n = ordStat(o).dispatchN + 1;
     const title = m ? `${m.customer || ''} ${m.status ? '· ' + m.status : ''} ${m.grandTotal != null ? '· QR ' + m.grandTotal : ''}`.trim() : 'Not found in Magento data';
-    return `<div class="chip ${isDup ? 'dup' : ''} ${flagged ? 'flagged' : ''}" title="${escapeHtml(title)}">${escapeHtml(o)}${flagged ? ' ⚠' : ''}<button onclick="removeDScan(${idx})">✕</button></div>`;
+    return `<div class="chip ${n>1?'reattempt':''} ${flagged ? 'flagged' : ''}" title="${escapeHtml(title)}">${escapeHtml(o)}${flagged ? ' ⚠' : ''}${n>1?` <span class="att">${ordinal(n)} attempt</span>`:''}<button onclick="removeDScan(${idx})">✕</button></div>`;
   }).join('');
   const hasScans = dScanned.length > 0;
   dAssignRow.classList.toggle('show', hasScans);
-  dStepLabel.textContent = hasScans ? 'Step 2 · Assign dispatcher, agent & location' : 'Step 1 · Scan order numbers';
+  dStepLabel.textContent = hasScans ? 'Step 2 · Assign agent & location' : 'Step 1 · Scan order numbers';
   renderDMagentoNote();
   validateDispatchBtn();
 }
-
 function renderDMagentoNote(){
   let note = document.getElementById('dMagentoNote');
-  if(dScanned.length === 0 || Object.keys(magentoIndex).length === 0){ if(note) note.remove(); return; }
-  const uniqueOrders = [...new Set(dScanned)];
-  const matchedOrders = uniqueOrders.filter(o => magentoIndex[o]);
-  const flagged = matchedOrders.filter(o => isFlaggedStatus(magentoIndex[o].status));
-  const summary = `${matchedOrders.length}/${uniqueOrders.length} matched in Magento${flagged.length ? ` · ⚠ ${flagged.length} flagged` : ''}`;
-  const rows = matchedOrders.map(o=>{
-    const m = magentoIndex[o];
-    const parts = [
-      m.status || '—',
-      m.paymentMethod || '—',
-      m.invoiced != null ? 'Invoice QR' + m.invoiced : null,
-      m.refunded ? 'Refund QR' + m.refunded : null
-    ].filter(Boolean).join(' · ');
-    return `<div class="ref-row ${isFlaggedStatus(m.status) ? 'flag' : ''}" title="${escapeHtml(m.comment || '')}"><b>${escapeHtml(o)}</b> — ${escapeHtml(parts)}</div>`;
-  }).join('');
-  if(!note){
-    note = document.createElement('div');
-    note.id = 'dMagentoNote';
-    note.className = 'magento-note';
-    dScanChips.insertAdjacentElement('afterend', note);
+  let anote = document.getElementById('dAttemptNote');
+  const reOrders = dScanned.filter(o => ordStat(o).dispatchN >= 1);
+  if(reOrders.length === 0){ if(anote) anote.remove(); }
+  else {
+    if(!anote){ anote = document.createElement('div'); anote.id = 'dAttemptNote'; dScanChips.insertAdjacentElement('afterend', anote); }
+    anote.className = 'magento-note attempt';
+    anote.innerHTML = `<div><b>⚠ Re-attempt:</b> ${reOrders.map(o=>`${escapeHtml(o)} (${ordinal(ordStat(o).dispatchN+1)} attempt)`).join(', ')}</div>`;
   }
+  if(dScanned.length === 0 || Object.keys(magentoIndex).length === 0){ if(note) note.remove(); return; }
+  const matchedOrders = dScanned.filter(o => magentoIndex[o]);
+  const flagged = matchedOrders.filter(o => isFlaggedStatus(magentoIndex[o].status));
+  const summary = `${matchedOrders.length}/${dScanned.length} matched in Magento${flagged.length ? ` · ⚠ ${flagged.length} flagged` : ''}`;
+  const rows = matchedOrders.map(o=>{
+    const mm = magentoIndex[o];
+    const parts = [mm.status || '—', mm.paymentMethod || '—', mm.invoiced != null ? 'Invoice QR' + mm.invoiced : null, mm.refunded ? 'Refund QR' + mm.refunded : null].filter(Boolean).join(' · ');
+    return `<div class="ref-row ${isFlaggedStatus(mm.status) ? 'flag' : ''}" title="${escapeHtml(mm.comment || '')}"><b>${escapeHtml(o)}</b> — ${escapeHtml(parts)}</div>`;
+  }).join('');
+  if(!note){ note = document.createElement('div'); note.id = 'dMagentoNote'; dScanChips.insertAdjacentElement('afterend', note); }
   note.className = 'magento-note' + (flagged.length ? ' warn' : '');
   note.innerHTML = `<div>${summary}</div>${rows ? `<div class="ref-list">${rows}</div>` : ''}`;
 }
 window.removeDScan = (idx)=>{ dScanned.splice(idx,1); renderDScanChips(); };
 
-['fDispatcher','fAgent','fLocation'].forEach(id=>document.getElementById(id).addEventListener('input', validateDispatchBtn));
+['fAgent','fLocation'].forEach(id=>document.getElementById(id).addEventListener('input', validateDispatchBtn));
 function validateDispatchBtn(){
-  const dispatcher = document.getElementById('fDispatcher').value.trim();
   const agent = document.getElementById('fAgent').value.trim();
   const location = document.getElementById('fLocation').value.trim();
-  dDispatchBtn.disabled = !(dScanned.length > 0 && dispatcher && agent && location);
+  dDispatchBtn.disabled = !(dScanned.length > 0 && agent && location);
 }
-
 document.getElementById('dClearBtn').addEventListener('click', ()=>{
   dScanned = [];
-  document.getElementById('fAgent').value = '';
-  document.getElementById('fLocation').value = '';
-  renderDScanChips();
+  document.getElementById('fAgent').value = ''; document.getElementById('fLocation').value = ''; document.getElementById('dRemark').value = '';
+  renderDScanChips(); dScanInput.focus();
+});
+
+dDispatchBtn.addEventListener('click', ()=>{
+  const agent = document.getElementById('fAgent').value.trim();
+  const location = document.getElementById('fLocation').value.trim();
+  const remark = document.getElementById('dRemark').value.trim();
+  if(dScanned.length === 0 || !agent || !location) return;
+
+  const createdAt = Date.now();
+  const batch = { id: 'B' + createdAt + Math.random().toString(36).slice(2,5), orders: [...new Set(dScanned)],
+    dispatcher: currentUser.name, agent, location, status: 'dispatched', remark, createdAt };
+  const reCount = batch.orders.filter(o => ordStat(o).dispatchN >= 1).length;
+
+  batches.unshift(batch);            // show it immediately…
+  rememberNames(agent, location);
+  dScanned = [];
+  document.getElementById('fAgent').value = ''; document.getElementById('fLocation').value = ''; document.getElementById('dRemark').value = '';
+  dataChanged();
+  enqueue('addDispatch', { batchId: batch.id, orders: batch.orders, agent, location, remark, dispatchDate: createdAt,   // …and save in the background
+    log: { action:'dispatch', details:`Dispatched ${batch.orders.length} order(s) to ${agent} from ${location}${reCount ? ` (${reCount} re-attempt)` : ''}${remark ? ' — ' + remark : ''}: ${batch.orders.join(', ')}` } });
+  showToast(`Dispatched ${batch.orders.length} order(s) from ${location}`);
   dScanInput.focus();
 });
 
-dDispatchBtn.addEventListener('click', async ()=>{
-  const dispatcher = document.getElementById('fDispatcher').value.trim();
-  const agent = document.getElementById('fAgent').value.trim();
-  const location = document.getElementById('fLocation').value.trim();
-  if(dScanned.length === 0 || !dispatcher || !agent || !location) return;
-
-  const batchId = 'B' + Date.now() + Math.random().toString(36).slice(2,5);
-  const createdAt = Date.now(); // locked timestamp — never editable after creation
-  const batch = {
-    batchId, orders: [...new Set(dScanned)],
-    dispatcher, agent, location,
-    status: 'dispatched',
-    dispatchDate: new Date(createdAt).toISOString()
-  };
-  dDispatchBtn.disabled = true; dDispatchBtn.textContent = 'Saving...';
-  try{
-    await api.addDispatch(batch);
-    dScanned = [];
-    document.getElementById('fAgent').value = '';
-    document.getElementById('fLocation').value = '';
-    renderDScanChips();
-    await loadBatches();
-    refreshAgentLocationOptions();
-    logActivity('dispatch', `Dispatched ${batch.orders.length} order(s) to ${agent} from ${location}: ${batch.orders.join(', ')}`);
-    showToast(`Dispatched ${batch.orders.length} order(s) from ${location}`);
-    dScanInput.focus();
-  }catch(e){ showToast('Could not save batch. Try again.'); console.error(e); }
-  dDispatchBtn.textContent = 'Confirm Dispatch';
-});
-
-// Dispatch rows live one-per-order in the "SFL Dispatch" sheet tab; group them
-// back into batch cards here (several orders scanned together share a Batch ID).
-function groupDispatchRows(rows){
-  const byBatch = {};
-  const order = [];
-  rows.forEach(r=>{
-    if(!byBatch[r.batchId]){
-      byBatch[r.batchId] = {
-        id: r.batchId, orders: [],
-        dispatcher: r.dispatcher, agent: r.agent, location: r.location, status: r.status,
-        createdAt: Date.parse(r.dispatchDate) || 0
-      };
-      order.push(r.batchId);
-    }
-    byBatch[r.batchId].orders.push(r.orderNumber);
-  });
-  return order.map(id=>byBatch[id]).sort((a,b)=> (b.createdAt||0) - (a.createdAt||0));
-}
-
-async function loadBatches(){
-  try{
-    const rows = await api.listDispatch();
-    batches = groupDispatchRows(rows);
-    renderDBoard();
-    renderStats();
-  }catch(e){ document.getElementById('dBoard').innerHTML = '<div class="empty">Could not load dispatch log.</div>'; console.error(e); }
-}
-window.markDelivered = async (id)=>{
+window.markDelivered = (id)=>{
   if(!isAdmin()){ showToast('Only Admin can modify records'); return; }
   const batch = batches.find(b=>b.id===id); if(!batch) return;
-  await api.updateDispatch(id, { 'Status': 'delivered' });
-  await loadBatches();
-  logActivity('delivered', `Marked batch ${batch.id} (${batch.orders.length} orders) as delivered`);
+  batch.status = 'delivered'; dataChanged();
+  enqueue('updateDispatch', { batchId: id, patch: { status: 'Delivered' }, log: { action:'delivered', details:`Marked batch ${id} (${batch.orders.length} orders) as delivered` } });
   showToast('Marked as delivered');
 };
 window.removeBatch = async (id)=>{
@@ -1154,9 +1264,8 @@ window.removeBatch = async (id)=>{
   const ok = await customConfirm('Delete this batch? This cannot be undone.');
   if(!ok) return;
   const batch = batches.find(b=>b.id===id);
-  await api.deleteDispatch(id);
-  await loadBatches();
-  logActivity('batch_deleted', `Deleted batch ${id}${batch ? ' (' + batch.orders.join(', ') + ')' : ''}`);
+  batches = batches.filter(b=>b.id !== id); dataChanged();
+  enqueue('deleteDispatch', { batchId: id, log: { action:'batch_deleted', details:`Deleted batch ${id}${batch ? ' (' + batch.orders.join(', ') + ')' : ''}` } });
   showToast('Batch removed');
 };
 window.toggleBatch = (id)=>{ const el = document.getElementById('orders-' + id); if(el) el.classList.toggle('open'); };
@@ -1169,39 +1278,33 @@ document.querySelectorAll('.filter-chip[data-group="d"]').forEach(chip=>{
 });
 document.getElementById('dSearchInput').addEventListener('input', renderDBoard);
 
-function renderDBoard(){
+function filteredBatches(){
   const q = document.getElementById('dSearchInput').value.trim().toLowerCase();
-  const returnedSet = new Set(returns.map(r=>r.orderNumber));
-  let filtered = batches.filter(b=>{
-    const matchesFilter = dFilter === 'all' || b.status === dFilter;
-    const hay = [b.agent, b.dispatcher, b.location, ...(b.orders||[])].join(' ').toLowerCase();
-    const matchesSearch = !q || hay.includes(q);
-    return matchesFilter && matchesSearch;
+  return batches.filter(b=>{
+    if(dFilter !== 'all' && b.status !== dFilter) return false;
+    if(!inPeriod(dPeriod, b.createdAt)) return false;
+    if(!q) return true;
+    return [b.agent, b.dispatcher, b.location, b.remark, ...(b.orders||[])].join(' ').toLowerCase().includes(q);
   });
+}
+
+function renderDBoard(){
+  const returnedSet = new Set(returns.map(r=>r.orderNumber));
+  const filtered = filteredBatches();
   const board = document.getElementById('dBoard');
-  if(filtered.length === 0){ board.innerHTML = '<div class="empty">No dispatch batches yet. Scan orders above to start.</div>'; return; }
-  board.innerHTML = filtered.map(b => {
+  if(filtered.length === 0){ board.innerHTML = `<div class="empty">${batches.length ? 'No batches match this filter.' : (lastSyncAt ? 'No dispatch batches yet. Scan orders above to start.' : 'Loading dispatch log...')}</div>`; return; }
+  board.innerHTML = filtered.slice(0, 300).map(b => {
     if(editingBatchId === b.id){
-      return `
-        <div class="batch-card">
-          <div class="batch-top">
-            <div class="batch-left">
-              <div class="batch-count">${(b.orders||[]).length}</div>
-              <div class="batch-info"><div class="agent">Editing batch</div></div>
-            </div>
-          </div>
+      return `<div class="batch-card"><div class="batch-top"><div class="batch-left"><div class="batch-count">${(b.orders||[]).length}</div><div class="batch-info"><div class="agent">Editing batch</div></div></div></div>
           <div class="edit-form">
             <input id="editDispatcher-${b.id}" value="${escapeHtml(b.dispatcher)}" placeholder="Dispatcher">
             <input id="editAgent-${b.id}" value="${escapeHtml(b.agent)}" placeholder="Delivery agent" list="agentOptions">
             <input id="editLocation-${b.id}" value="${escapeHtml(b.location)}" placeholder="Dispatch location" list="locationOptions">
-            <div class="edit-actions">
-              <button class="btn-save" onclick="saveBatchEdit('${b.id}')">Save</button>
-              <button onclick="cancelEditBatch()">Cancel</button>
-            </div>
-          </div>
-        </div>
-      `;
+            <textarea id="editRemark-${b.id}" rows="2" placeholder="Remark">${escapeHtml(b.remark)}</textarea>
+            <div class="edit-actions"><button class="btn-save" onclick="saveBatchEdit('${b.id}')">Save</button><button onclick="cancelEditBatch()">Cancel</button></div>
+          </div></div>`;
     }
+    const reAttempts = (b.orders||[]).filter(o => attemptOf(b,o) > 1).length;
     return `
     <div class="batch-card">
       <div class="batch-top" onclick="toggleBatch('${b.id}')">
@@ -1210,38 +1313,45 @@ function renderDBoard(){
           <div class="batch-info">
             <div class="agent">${escapeHtml(b.agent)}</div>
             <div class="meta-line">${escapeHtml(b.location)} &middot; by ${escapeHtml(b.dispatcher)} &middot; ${fmtDateTime(b.createdAt)}</div>
+            ${b.remark ? `<div class="remark-line">📝 ${escapeHtml(b.remark)}</div>` : ''}
           </div>
         </div>
-        <div class="status-tag ${b.status}">${b.status}</div>
+        <div class="tag-row">
+          ${reAttempts ? `<div class="status-tag tag-attempt">${reAttempts} re-attempt${reAttempts>1?'s':''}</div>` : ''}
+          <div class="status-tag ${b.status}">${b.status}</div>
+        </div>
       </div>
       <div class="batch-orders" id="orders-${b.id}">
-        ${(b.orders||[]).map(o=>`<div class="order-chip ${returnedSet.has(o)?'returned-flag':''}">${escapeHtml(o)}${returnedSet.has(o)?' ↩':''}</div>`).join('')}
+        ${(b.orders||[]).map(o=>{ const a = attemptOf(b,o); return `<div class="order-chip ${returnedSet.has(o)?'returned-flag':''}">${escapeHtml(o)}${returnedSet.has(o)?' ↩':''}${a>1?` <span class="att">${ordinal(a)} attempt</span>`:''}</div>`; }).join('')}
       </div>
       <div class="batch-actions">
         ${(b.status !== 'delivered' && isAdmin()) ? `<button class="primary" onclick="markDelivered('${b.id}')">Mark Delivered</button>` : ''}
         <button onclick="toggleBatch('${b.id}')">View Orders</button>
         ${!isGuest() ? `<button onclick="printBatch('${b.id}')">Print Manifest</button>` : ''}
+        <button onclick="exportBatch('${b.id}')">Export CSV</button>
         ${isAdmin() ? `<button onclick="editBatch('${b.id}')">Edit</button><button onclick="removeBatch('${b.id}')">Delete</button>` : ''}
       </div>
-    </div>
-  `;
-  }).join('');
+    </div>`;
+  }).join('') + (filtered.length > 300 ? `<div class="empty">Showing the newest 300 of ${filtered.length} batches — narrow with search or the date filter.</div>` : '');
 }
 window.editBatch = (id)=>{ editingBatchId = id; renderDBoard(); };
 window.cancelEditBatch = ()=>{ editingBatchId = null; renderDBoard(); };
-window.saveBatchEdit = async (id)=>{
+window.saveBatchEdit = (id)=>{
   const batch = batches.find(b=>b.id===id); if(!batch) return;
   const dispatcher = document.getElementById('editDispatcher-'+id).value.trim() || batch.dispatcher;
   const agent = document.getElementById('editAgent-'+id).value.trim() || batch.agent;
   const location = document.getElementById('editLocation-'+id).value.trim() || batch.location;
-  await api.updateDispatch(id, { 'Dispatcher': dispatcher, 'Delivery Agent': agent, 'Dispatch Location': location });
-  editingBatchId = null;
-  await loadBatches(); refreshAgentLocationOptions();
-  logActivity('batch_edited', `Edited batch ${id}: agent=${agent}, location=${location}, dispatcher=${dispatcher}`);
+  const remark = document.getElementById('editRemark-'+id).value.trim();
+  Object.assign(batch, { dispatcher, agent, location, remark });
+  editingBatchId = null; rememberNames(agent, location); dataChanged();
+  enqueue('updateDispatch', { batchId: id, patch: { dispatcher, agent, location, remark },
+    log: { action:'batch_edited', details:`Edited batch ${id}: agent=${agent}, location=${location}, dispatcher=${dispatcher}` } });
   showToast('Batch updated');
 };
 
-/* ================= RETURNS TAB ================= */
+/* =====================================================================
+   RETURNS TAB
+   ===================================================================== */
 const rOrderInput = document.getElementById('rOrderInput');
 const rLookupBox = document.getElementById('rLookupBox');
 const rSkuInput = document.getElementById('rSkuInput');
@@ -1257,23 +1367,23 @@ rOrderInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventD
 function doLookup(){
   const val = rOrderInput.value.trim();
   if(!val){ rLookupBox.classList.remove('show','found','notfound'); matchedBatch = null; validateReturnBtn(); return; }
-  const idx = getOrderIndex();
-  const b = idx[val];
+  const st = ordStat(val);
+  const b = st.lastBatch;
   const m = magentoIndex[val];
   rLookupBox.classList.add('show');
   let magentoLine = '';
   if(m){
     magentoLine = `<div class="lb-line">Magento: ${escapeHtml(m.status || '—')}${m.paymentMethod ? ' · ' + escapeHtml(m.paymentMethod) : ''}${m.invoiced != null ? ' · Invoice QR' + m.invoiced : ''}${m.refunded ? ' · Refunded QR' + m.refunded : ''}</div>`;
-    if(m.comment){
-      magentoLine += `<div class="lb-line">Comment: ${escapeHtml(m.comment.slice(0,140))}${m.comment.length > 140 ? '…' : ''}</div>`;
-    }
+    if(m.comment) magentoLine += `<div class="lb-line">Comment: ${escapeHtml(m.comment.slice(0,140))}${m.comment.length > 140 ? '…' : ''}</div>`;
   }
   if(b){
     matchedBatch = b;
     rLookupBox.classList.add('found'); rLookupBox.classList.remove('notfound');
-    rLookupBox.innerHTML = `<div class="lb-title">✓ Found in dispatch log</div>
+    rLookupBox.innerHTML = `<div class="lb-title">✓ Found in dispatch log${st.dispatchN > 1 ? ` — ${ordinal(st.dispatchN)} dispatch attempt` : ''}</div>
       <div class="lb-line">Dispatched ${fmtDateTime(b.createdAt)} · Agent: ${escapeHtml(b.agent)}</div>
-      <div class="lb-line">Location: ${escapeHtml(b.location)} · By: ${escapeHtml(b.dispatcher)}</div>${magentoLine}`;
+      <div class="lb-line">Location: ${escapeHtml(b.location)} · By: ${escapeHtml(b.dispatcher)}</div>
+      ${b.remark ? `<div class="lb-line">Dispatch remark: ${escapeHtml(b.remark)}</div>` : ''}
+      ${st.returnN ? `<div class="lb-line">⚠ Already returned ${st.returnN} time${st.returnN>1?'s':''} before</div>` : ''}${magentoLine}`;
   } else {
     matchedBatch = null;
     rLookupBox.classList.add('notfound'); rLookupBox.classList.remove('found');
@@ -1289,47 +1399,33 @@ rSkuInput.addEventListener('keydown', (e)=>{
     const val = rSkuInput.value.trim();
     rSkuInput.value = '';
     if(!val) return;
-    rSkus.push(val); // raw scan log — each scan = +1 unit; duplicates are real quantity, not mistakes
+    rSkus.push(val); // each scan = +1 unit
     renderRSkuChips();
   }
 });
-
-function tallySkus(){
-  const tally = {};
-  rSkus.forEach(s => { tally[s] = (tally[s] || 0) + 1; });
-  return tally;
-}
-
+function tallySkus(){ const tally = {}; rSkus.forEach(s => { tally[s] = (tally[s] || 0) + 1; }); return tally; }
 function renderRSkuChips(){
   const tally = tallySkus();
-  const uniqueSkus = Object.keys(tally);
-  rSkuCount.textContent = rSkus.length; // total units scanned
-  rSkuChips.innerHTML = uniqueSkus.map(sku => `
-    <div class="chip">${escapeHtml(sku)} <b style="margin-left:4px;">×${tally[sku]}</b><button onclick="removeRSku('${escapeHtml(sku).replace(/'/g, "\\'")}')">✕</button></div>
-  `).join('');
+  rSkuCount.textContent = rSkus.length;
+  rSkuChips.innerHTML = Object.keys(tally).map(sku => `
+    <div class="chip">${escapeHtml(sku)} <b style="margin-left:4px;">×${tally[sku]}</b><button onclick="removeRSku('${escapeHtml(sku).replace(/'/g, "\\'")}')">✕</button></div>`).join('');
   rAssignRow.classList.toggle('show', rSkus.length > 0);
   validateReturnBtn();
 }
-window.removeRSku = (sku)=>{
-  const idx = rSkus.lastIndexOf(sku); // remove one unit of this SKU, not the whole group
-  if(idx > -1) rSkus.splice(idx,1);
-  renderRSkuChips();
-};
+window.removeRSku = (sku)=>{ const idx = rSkus.lastIndexOf(sku); if(idx > -1) rSkus.splice(idx,1); renderRSkuChips(); };
 
-['fReceiver','fReturnAgent','fReturnDate'].forEach(id=>document.getElementById(id).addEventListener('input', validateReturnBtn));
+['fReturnAgent','fReturnDate'].forEach(id=>document.getElementById(id).addEventListener('input', validateReturnBtn));
 function validateReturnBtn(){
   const orderNum = rOrderInput.value.trim();
-  const receiver = document.getElementById('fReceiver').value.trim();
   const returnAgent = document.getElementById('fReturnAgent').value.trim();
   const date = document.getElementById('fReturnDate').value;
-  rSubmitBtn.disabled = !(orderNum && rSkus.length > 0 && receiver && returnAgent && date);
+  rSubmitBtn.disabled = !(orderNum && rSkus.length > 0 && currentUser && returnAgent && date);
 }
-
 document.getElementById('rClearBtn').addEventListener('click', resetReturnForm);
 function resetReturnForm(){
   rOrderInput.value = ''; rSkus = []; matchedBatch = null;
-  document.getElementById('fReceiver').value = '';
   document.getElementById('fReturnAgent').value = '';
+  document.getElementById('rRemark').value = '';
   document.getElementById('fReturnDate').value = todayStr();
   rLookupBox.classList.remove('show','found','notfound');
   renderRSkuChips();
@@ -1337,69 +1433,37 @@ function resetReturnForm(){
 }
 document.getElementById('fReturnDate').value = todayStr();
 
-rSubmitBtn.addEventListener('click', async ()=>{
+rSubmitBtn.addEventListener('click', ()=>{
   const orderNumber = rOrderInput.value.trim();
-  const receiver = document.getElementById('fReceiver').value.trim();
   const returnAgent = document.getElementById('fReturnAgent').value.trim();
   const returnDate = document.getElementById('fReturnDate').value;
-  if(!orderNumber || rSkus.length === 0 || !receiver || !returnAgent || !returnDate) return;
+  const remark = document.getElementById('rRemark').value.trim();
+  if(!orderNumber || rSkus.length === 0 || !currentUser || !returnAgent || !returnDate) return;
 
   const skuEntries = Object.entries(tallySkus()).map(([sku,qty])=>({sku,qty}));
-  const ret = {
-    orderNumber, skus: skuEntries,
-    returnDate, receiver, returnAgent,
-    matched: !!matchedBatch
-  };
-  rSubmitBtn.disabled = true; rSubmitBtn.textContent = 'Saving...';
-  try{
-    await api.addReturn(ret);
-    resetReturnForm();
-    await loadReturns(); renderDBoard(); renderStats();
-    const totalUnits = skuEntries.reduce((s,e)=>s+e.qty,0);
-    logActivity('return', `Logged return for order ${orderNumber} (${skuEntries.length} SKU(s), ${totalUnits} unit(s)), received by ${receiver}`);
-    showToast(`Return logged for ${orderNumber}`);
-  }catch(e){ showToast('Could not save return. Try again.'); console.error(e); }
-  rSubmitBtn.textContent = 'Log Return';
+  const receiver = currentUser.name; // locked to the signed-in staff member
+  const matched = !!matchedBatch;
+  const key = [orderNumber, returnDate, receiver].join('|');
+  const existing = returns.find(r => r.id === 'r' + hashStr(key));
+  if(existing){ skuEntries.forEach(e => existing.skus.push({ sku: e.sku, qty: e.qty })); if(!existing.remark) existing.remark = remark; }
+  else returns.unshift({ id: 'r' + hashStr(key), orderNumber, returnDate, receiver, returnAgent, matched, remark, skus: skuEntries, ts: dayTs(returnDate) });
+  rememberNames(returnAgent, '');
+  const totalUnits = skuEntries.reduce((s,e)=>s+e.qty,0);
+  resetReturnForm();
+  dataChanged();
+  enqueue('addReturn', { orderNumber, skus: skuEntries, returnDate, returnAgent, matched, remark,
+    log: { action:'return', details:`Logged return for order ${orderNumber} (${skuEntries.length} SKU(s), ${totalUnits} unit(s)), received by ${receiver}${remark ? ' — ' + remark : ''}` } });
+  showToast(`Return logged for ${orderNumber}`);
 });
 
-// Return rows live one-per-SKU in the "SFL Returns" sheet tab, with no ID
-// column — rows logged together are grouped back into one card here by
-// (Order Number + Return Date + Receiver), which is also how edits/deletes
-// find the right rows again (see api.updateReturn / api.deleteReturn).
-function groupReturnRows(rows){
-  const groups = [];
-  const index = {};
-  rows.forEach(r=>{
-    const key = [r.orderNumber, r.returnDate, r.receiver].join('|||');
-    if(!index[key]){
-      index[key] = {
-        id: 'ret' + groups.length,
-        orderNumber: r.orderNumber, returnDate: r.returnDate, receiver: r.receiver,
-        returnAgent: r.returnAgent, matched: r.matched, skus: []
-      };
-      groups.push(index[key]);
-    }
-    index[key].skus.push({ sku: r.sku, qty: Number(r.qty) || 1 });
-  });
-  return groups.reverse(); // most recently logged first
-}
-
-async function loadReturns(){
-  try{
-    const rows = await api.listReturns();
-    returns = groupReturnRows(rows);
-    renderRBoard(); renderStats();
-  }catch(e){ document.getElementById('rBoard').innerHTML = '<div class="empty">Could not load returns log.</div>'; console.error(e); }
-}
 window.removeReturn = async (id)=>{
   if(!isAdmin()){ showToast('Only Admin can delete records'); return; }
   const ok = await customConfirm('Delete this return record?');
   if(!ok) return;
-  const ret = returns.find(r=>r.id===id);
-  if(!ret) return;
-  await api.deleteReturn({ orderNumber: ret.orderNumber, returnDate: ret.returnDate, receiver: ret.receiver });
-  await loadReturns(); renderDBoard(); renderStats();
-  logActivity('return_deleted', `Deleted return record for order ${ret.orderNumber}`);
+  const ret = returns.find(r=>r.id===id); if(!ret) return;
+  returns = returns.filter(r=>r.id !== id); dataChanged();
+  enqueue('deleteReturn', { identity: { orderNumber: ret.orderNumber, returnDate: ret.returnDate, receiver: ret.receiver },
+    log: { action:'return_deleted', details:`Deleted return record for order ${ret.orderNumber}` } });
   showToast('Return removed');
 };
 
@@ -1411,51 +1475,44 @@ document.querySelectorAll('.filter-chip[data-group="r"]').forEach(chip=>{
 });
 document.getElementById('rSearchInput').addEventListener('input', renderRBoard);
 
-function renderRBoard(){
+function filteredReturns(){
   const q = document.getElementById('rSearchInput').value.trim().toLowerCase();
-  let filtered = returns.filter(r=>{
-    const matchesFilter = rFilter === 'all' || (rFilter === 'matched' && r.matched) || (rFilter === 'unmatched' && !r.matched);
-    const hay = [r.orderNumber, r.receiver, r.returnAgent, ...(r.skus||[]).map(s=>s.sku)].join(' ').toLowerCase();
-    const matchesSearch = !q || hay.includes(q);
-    return matchesFilter && matchesSearch;
+  return returns.filter(r=>{
+    if(!(rFilter === 'all' || (rFilter === 'matched' && r.matched) || (rFilter === 'unmatched' && !r.matched))) return false;
+    if(!inPeriod(rPeriod, r.ts)) return false;
+    if(!q) return true;
+    return [r.orderNumber, r.receiver, r.returnAgent, r.remark, ...(r.skus||[]).map(s=>s.sku)].join(' ').toLowerCase().includes(q);
   });
+}
+
+function renderRBoard(){
+  const filtered = filteredReturns();
   const board = document.getElementById('rBoard');
-  if(filtered.length === 0){ board.innerHTML = '<div class="empty">No returns logged yet.</div>'; return; }
-  board.innerHTML = filtered.map(r => {
+  if(filtered.length === 0){ board.innerHTML = `<div class="empty">${returns.length ? 'No returns match this filter.' : (lastSyncAt ? 'No returns logged yet.' : 'Loading returns log...')}</div>`; return; }
+  board.innerHTML = filtered.slice(0, 300).map(r => {
+    const units = (r.skus||[]).reduce((s,e)=>s+(e.qty||1),0);
     if(editingReturnId === r.id){
-      return `
-        <div class="batch-card">
-          <div class="batch-top">
-            <div class="batch-left">
-              <div class="batch-count">${(r.skus||[]).reduce((s,e)=>s+(e.qty||1),0)}</div>
-              <div class="batch-info"><div class="agent">Editing return &middot; Order ${escapeHtml(r.orderNumber)}</div></div>
-            </div>
-          </div>
+      return `<div class="batch-card"><div class="batch-top"><div class="batch-left"><div class="batch-count">${units}</div><div class="batch-info"><div class="agent">Editing return &middot; Order ${escapeHtml(r.orderNumber)}</div></div></div></div>
           <div class="edit-form">
             <input id="editReceiver-${r.id}" value="${escapeHtml(r.receiver)}" placeholder="Receiver">
-            <input id="editReturnAgent-${r.id}" value="${escapeHtml(r.returnAgent)}" placeholder="Return agent">
+            <input id="editReturnAgent-${r.id}" value="${escapeHtml(r.returnAgent)}" placeholder="Return agent" list="agentOptions">
             <input id="editReturnDate-${r.id}" type="date" value="${escapeHtml(r.returnDate)}">
-            <div class="edit-actions">
-              <button class="btn-save" onclick="saveReturnEdit('${r.id}')">Save</button>
-              <button onclick="cancelEditReturn()">Cancel</button>
-            </div>
-          </div>
-        </div>
-      `;
+            <textarea id="editRRemark-${r.id}" rows="2" placeholder="Remark">${escapeHtml(r.remark)}</textarea>
+            <div class="edit-actions"><button class="btn-save" onclick="saveReturnEdit('${r.id}')">Save</button><button onclick="cancelEditReturn()">Cancel</button></div>
+          </div></div>`;
     }
     return `
     <div class="batch-card">
       <div class="batch-top" onclick="toggleBatch('ret-${r.id}')">
         <div class="batch-left">
-          <div class="batch-count">${(r.skus||[]).reduce((s,e)=>s+(e.qty||1),0)}</div>
+          <div class="batch-count">${units}</div>
           <div class="batch-info">
             <div class="agent">Order ${escapeHtml(r.orderNumber)}</div>
             <div class="meta-line">Received by ${escapeHtml(r.receiver)} &middot; brought by ${escapeHtml(r.returnAgent)} &middot; ${fmtDate(r.returnDate)}</div>
+            ${r.remark ? `<div class="remark-line">📝 ${escapeHtml(r.remark)}</div>` : ''}
           </div>
         </div>
-        <div class="tag-row">
-          <div class="status-tag ${r.matched ? 'matched' : 'unmatched'}">${r.matched ? 'Matched' : 'Unmatched'}</div>
-        </div>
+        <div class="tag-row"><div class="status-tag ${r.matched ? 'matched' : 'unmatched'}">${r.matched ? 'Matched' : 'Unmatched'}</div></div>
       </div>
       <div class="batch-orders" id="orders-ret-${r.id}">
         ${(r.skus||[]).map(s=>`<div class="order-chip">${escapeHtml(s.sku)} ${s.qty>1?`<b>×${s.qty}</b>`:''}</div>`).join('')}
@@ -1464,61 +1521,44 @@ function renderRBoard(){
         <button onclick="toggleBatch('ret-${r.id}')">View SKUs</button>
         ${isAdmin() ? `<button onclick="editReturn('${r.id}')">Edit</button><button onclick="removeReturn('${r.id}')">Delete</button>` : ''}
       </div>
-    </div>
-  `;
-  }).join('');
+    </div>`;
+  }).join('') + (filtered.length > 300 ? `<div class="empty">Showing the newest 300 of ${filtered.length} returns — narrow with search or the date filter.</div>` : '');
 }
 window.editReturn = (id)=>{ editingReturnId = id; renderRBoard(); };
 window.cancelEditReturn = ()=>{ editingReturnId = null; renderRBoard(); };
-window.saveReturnEdit = async (id)=>{
+window.saveReturnEdit = (id)=>{
   const ret = returns.find(r=>r.id===id); if(!ret) return;
-  const identity = { orderNumber: ret.orderNumber, returnDate: ret.returnDate, receiver: ret.receiver }; // original, for finding the rows
-  const newReceiver = document.getElementById('editReceiver-'+id).value.trim() || ret.receiver;
-  const newReturnAgent = document.getElementById('editReturnAgent-'+id).value.trim() || ret.returnAgent;
-  const newReturnDate = document.getElementById('editReturnDate-'+id).value || ret.returnDate;
-  await api.updateReturn(identity, { 'Receiver': newReceiver, 'Return Agent': newReturnAgent, 'Return Date': newReturnDate });
-  editingReturnId = null;
-  await loadReturns();
-  logActivity('return_edited', `Edited return for order ${ret.orderNumber}`);
+  const identity = { orderNumber: ret.orderNumber, returnDate: ret.returnDate, receiver: ret.receiver };
+  const receiver = document.getElementById('editReceiver-'+id).value.trim() || ret.receiver;
+  const returnAgent = document.getElementById('editReturnAgent-'+id).value.trim() || ret.returnAgent;
+  const returnDate = document.getElementById('editReturnDate-'+id).value || ret.returnDate;
+  const remark = document.getElementById('editRRemark-'+id).value.trim();
+  Object.assign(ret, { receiver, returnAgent, returnDate, remark, ts: dayTs(returnDate), id: 'r' + hashStr([ret.orderNumber, returnDate, receiver].join('|')) });
+  editingReturnId = null; dataChanged();
+  enqueue('updateReturn', { identity, patch: { receiver, returnAgent, returnDate, remark }, log: { action:'return_edited', details:`Edited return for order ${ret.orderNumber}` } });
   showToast('Return updated');
 };
 
 /* ---------- STATS ---------- */
 function renderStats(){
-  const totalOrders = batches.reduce((s,b)=>s+(b.orders?b.orders.length:0),0);
-  document.getElementById('statOrders').textContent = totalOrders;
+  document.getElementById('statOrders').textContent = batches.reduce((s,b)=>s+(b.orders?b.orders.length:0),0);
   document.getElementById('statReturns').textContent = returns.length;
   document.getElementById('statUnmatched').textContent = returns.filter(r=>!r.matched).length;
 }
 
-/* ================= REPORTS TAB ================= */
-let reportRange = 'all';
-document.querySelectorAll('.range-chip').forEach(chip=>{
-  chip.addEventListener('click', ()=>{
-    document.querySelectorAll('.range-chip').forEach(c=>c.classList.remove('active'));
-    chip.classList.add('active');
-    reportRange = chip.dataset.range;
-    renderReports();
-  });
-});
-
-function withinRange(ts){
-  if(reportRange === 'all') return true;
-  const days = parseInt(reportRange, 10);
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-  return ts >= cutoff;
-}
-
+/* =====================================================================
+   REPORTS TAB
+   ===================================================================== */
 function renderReports(){
-  const rBatches = batches.filter(b => withinRange(b.createdAt));
-  const rReturns = returns.filter(r => withinRange(r.createdAt));
+  const rBatches = batches.filter(b => inPeriod(repPeriod, b.createdAt));
+  const rReturns = returns.filter(r => inPeriod(repPeriod, r.ts));
   const returnedSet = new Set(returns.map(r=>r.orderNumber));
 
   const totalOrders = rBatches.reduce((s,b)=>s+(b.orders?b.orders.length:0),0);
   const totalDelivered = rBatches.filter(b=>b.status==='delivered').reduce((s,b)=>s+(b.orders?b.orders.length:0),0);
-  const totalReturns = rReturns.length;
   const returnRate = totalOrders > 0 ? ((rBatches.reduce((s,b)=>s+(b.orders||[]).filter(o=>returnedSet.has(o)).length,0) / totalOrders) * 100).toFixed(1) : '0.0';
   const uniqueAgents = new Set(rBatches.map(b=>b.agent)).size;
+  const reAttempts = rBatches.reduce((s,b)=>s+(b.orders||[]).filter(o=>attemptOf(b,o)>1).length,0);
 
   let totalValue = 0, valuedCount = 0;
   const flaggedRows = [];
@@ -1526,9 +1566,7 @@ function renderReports(){
     (b.orders||[]).forEach(o=>{
       const m = magentoIndex[o];
       if(m && m.grandTotal != null){ totalValue += m.grandTotal; valuedCount++; }
-      if(m && isFlaggedStatus(m.status)){
-        flaggedRows.push({order:o, status:m.status, batch:b, value:m.grandTotal});
-      }
+      if(m && isFlaggedStatus(m.status)) flaggedRows.push({order:o, status:m.status, batch:b, value:m.grandTotal});
     });
   });
   const avgValue = valuedCount > 0 ? (totalValue / valuedCount).toFixed(2) : '0.00';
@@ -1537,14 +1575,23 @@ function renderReports(){
     <div class="summary-card"><div class="n">${rBatches.length}</div><div class="l">Batches</div></div>
     <div class="summary-card"><div class="n">${totalOrders}</div><div class="l">Orders Dispatched</div></div>
     <div class="summary-card"><div class="n">${totalDelivered}</div><div class="l">Delivered</div></div>
-    <div class="summary-card"><div class="n">${totalReturns}</div><div class="l">Returns</div></div>
+    <div class="summary-card"><div class="n">${rReturns.length}</div><div class="l">Returns</div></div>
     <div class="summary-card"><div class="n">${returnRate}%</div><div class="l">Return Rate</div></div>
+    <div class="summary-card"><div class="n">${reAttempts}</div><div class="l">Re-attempts</div></div>
     <div class="summary-card"><div class="n">${uniqueAgents}</div><div class="l">Active Agents</div></div>
     ${Object.keys(magentoIndex).length > 0 ? `
     <div class="summary-card"><div class="n">QR ${totalValue.toFixed(0)}</div><div class="l">Dispatched Value</div></div>
-    <div class="summary-card"><div class="n">QR ${avgValue}</div><div class="l">Avg Order Value</div></div>
-    ` : ''}
-  `;
+    <div class="summary-card"><div class="n">QR ${avgValue}</div><div class="l">Avg Order Value</div></div>` : ''}`;
+
+  // Month-by-month (always across everything, so you can compare months)
+  const months = {};
+  batches.forEach(b=>{ const k = monthKey(b.createdAt); (months[k] = months[k] || {b:0,o:0,r:0}); months[k].b++; months[k].o += (b.orders||[]).length; });
+  returns.forEach(r=>{ const k = monthKey(r.ts); (months[k] = months[k] || {b:0,o:0,r:0}); months[k].r++; });
+  const mKeys = Object.keys(months).sort().reverse();
+  document.getElementById('monthTable').innerHTML = mKeys.length ? `
+    <thead><tr><th>Month</th><th>Batches</th><th>Orders</th><th>Returns</th></tr></thead>
+    <tbody>${mKeys.map(k=>`<tr><td>${escapeHtml(k)}</td><td>${months[k].b}</td><td>${months[k].o}</td><td>${months[k].r}</td></tr>`).join('')}</tbody>`
+    : `<tbody><tr><td style="color:var(--ink-soft); font-size:12.5px;">No data yet.</td></tr></tbody>`;
 
   renderBreakdownTable('agentTable', rBatches, b => b.agent, b => (b.orders||[]).length, 'Agent', 'Orders');
   renderBreakdownTable('locationTable', rBatches, b => b.location, b => (b.orders||[]).length, 'Location', 'Orders');
@@ -1554,102 +1601,77 @@ function renderReports(){
   if(flaggedRows.length === 0){
     flaggedTable.innerHTML = `<tbody><tr><td style="color:var(--ink-soft); font-size:12.5px;">${Object.keys(magentoIndex).length === 0 ? 'Import Magento data above to enable this check.' : 'No flagged orders in this range.'}</td></tr></tbody>`;
   } else {
-    flaggedTable.innerHTML = `
-      <thead><tr><th>Order</th><th>Magento Status</th><th>Delivery Agent</th><th>Value</th></tr></thead>
-      <tbody>
-        ${flaggedRows.map(f => `
-          <tr>
-            <td>${escapeHtml(f.order)}</td>
-            <td><span class="status-tag ${f.status.toLowerCase().includes('cancel') ? 'canceled' : 'refunded'}">${escapeHtml(f.status)}</span></td>
-            <td>${escapeHtml(f.batch.agent)}</td>
-            <td>${f.value != null ? 'QR ' + f.value : '—'}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    `;
+    flaggedTable.innerHTML = `<thead><tr><th>Order</th><th>Magento Status</th><th>Delivery Agent</th><th>Value</th></tr></thead><tbody>
+      ${flaggedRows.map(f => `<tr><td>${escapeHtml(f.order)}</td>
+        <td><span class="status-tag ${f.status.toLowerCase().includes('cancel') ? 'canceled' : 'refunded'}">${escapeHtml(f.status)}</span></td>
+        <td>${escapeHtml(f.batch.agent)}</td><td>${f.value != null ? 'QR ' + f.value : '—'}</td></tr>`).join('')}</tbody>`;
   }
 }
-
 function renderBreakdownTable(tableId, rows, keyFn, countFn, keyLabel, countLabel){
   const counts = {};
-  rows.forEach(row=>{
-    const key = keyFn(row) || 'Unknown';
-    counts[key] = (counts[key] || 0) + countFn(row);
-  });
+  rows.forEach(row=>{ const key = keyFn(row) || 'Unknown'; counts[key] = (counts[key] || 0) + countFn(row); });
   const entries = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
   const max = entries.length ? entries[0][1] : 1;
-  const tbody = document.querySelector('#' + tableId + ' tbody');
-  if(entries.length === 0){
-    document.querySelector('#' + tableId).innerHTML = `<tbody><tr><td style="color:var(--ink-soft); font-size:12.5px;">No data for this range.</td></tr></tbody>`;
-    return;
-  }
-  document.querySelector('#' + tableId).innerHTML = `
-    <thead><tr><th>${keyLabel}</th><th>${countLabel}</th><th></th></tr></thead>
-    <tbody>
-      ${entries.map(([k,v])=>`
-        <tr>
-          <td>${escapeHtml(k)}</td>
-          <td>${v}</td>
-          <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:${(v/max*100).toFixed(0)}%"></div></div></div></td>
-        </tr>
-      `).join('')}
-    </tbody>
-  `;
+  const table = document.getElementById(tableId);
+  if(entries.length === 0){ table.innerHTML = `<tbody><tr><td style="color:var(--ink-soft); font-size:12.5px;">No data for this range.</td></tr></tbody>`; return; }
+  table.innerHTML = `<thead><tr><th>${keyLabel}</th><th>${countLabel}</th><th></th></tr></thead><tbody>
+    ${entries.map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${v}</td><td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:${(v/max*100).toFixed(0)}%"></div></div></div></td></tr>`).join('')}</tbody>`;
 }
 
-function csvEscape(val){
-  const s = String(val == null ? '' : val);
-  if(/[",\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
-  return s;
-}
+/* ---------- CSV EXPORTS (batch / board / report — all share these two) ---------- */
+function csvEscape(val){ const s = String(val == null ? '' : val); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s; }
 function downloadCSV(filename, rows){
-  const csv = rows.map(r => r.map(csvEscape).join(',')).join('\r\n');
+  const csv = '\uFEFF' + rows.map(r => r.map(csvEscape).join(',')).join('\r\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
 }
-
-document.getElementById('exportDispatchBtn').addEventListener('click', ()=>{
+function dispatchCsvRows(list){
   const returnedSet = new Set(returns.map(r=>r.orderNumber));
   const hasMagento = Object.keys(magentoIndex).length > 0;
-  const header = ['Order Number','Batch ID','Dispatch Date','Dispatcher','Delivery Agent','Dispatch Location','Status','Returned'];
+  const header = ['Order Number','Batch ID','Dispatch Date','Dispatcher','Delivery Agent','Dispatch Location','Status','Attempt','Remark','Returned'];
   if(hasMagento) header.push('Customer','Order Value','Magento Status');
   const rows = [header];
-  batches.filter(b=>withinRange(b.createdAt)).forEach(b=>{
-    (b.orders||[]).forEach(o=>{
-      const row = [o, b.id, fmtDateTime(b.createdAt), b.dispatcher, b.agent, b.location, b.status, returnedSet.has(o) ? 'Yes' : 'No'];
-      if(hasMagento){
-        const m = magentoIndex[o];
-        row.push(m ? (m.customer || '') : '', m && m.grandTotal != null ? m.grandTotal : '', m ? (m.status || '') : '');
-      }
-      rows.push(row);
-    });
-  });
-  if(rows.length === 1){ showToast('No dispatch data to export'); return; }
-  downloadCSV('dispatch_export_' + todayStr() + '.csv', rows);
-  showToast('Dispatch CSV downloaded');
+  list.forEach(b=>(b.orders||[]).forEach(o=>{
+    const row = [o, b.id, isoLocal(b.createdAt), b.dispatcher, b.agent, b.location, b.status, attemptOf(b,o), b.remark || '', returnedSet.has(o) ? 'Yes' : 'No'];
+    if(hasMagento){ const m = magentoIndex[o]; row.push(m ? (m.customer || '') : '', m && m.grandTotal != null ? m.grandTotal : '', m ? (m.status || '') : ''); }
+    rows.push(row);
+  }));
+  return rows;
+}
+function returnCsvRows(list){
+  const rows = [['Order Number','SKU','QTY','Return Date','Receiver','Return Agent','Matched to Dispatch','Remark']];
+  list.forEach(r=>(r.skus||[]).forEach(s=>rows.push([r.orderNumber, s.sku, s.qty, r.returnDate, r.receiver, r.returnAgent, r.matched ? 'Yes' : 'No', r.remark || ''])));
+  return rows;
+}
+window.exportBatch = (id)=>{
+  const b = batches.find(x=>x.id===id); if(!b) return;
+  downloadCSV(`batch_${b.id}.csv`, dispatchCsvRows([b]));
+  showToast('Batch CSV downloaded');
+};
+document.getElementById('dExportBtn').addEventListener('click', ()=>{
+  const rows = dispatchCsvRows(filteredBatches());
+  if(rows.length === 1){ showToast('Nothing to export for this filter'); return; }
+  downloadCSV(`dispatch_${periodLabel(dPeriod)}.csv`, rows); showToast(`Exported ${rows.length-1} order rows`);
 });
-
+document.getElementById('rExportBtn').addEventListener('click', ()=>{
+  const rows = returnCsvRows(filteredReturns());
+  if(rows.length === 1){ showToast('Nothing to export for this filter'); return; }
+  downloadCSV(`returns_${periodLabel(rPeriod)}.csv`, rows); showToast(`Exported ${rows.length-1} return rows`);
+});
+document.getElementById('exportDispatchBtn').addEventListener('click', ()=>{
+  const rows = dispatchCsvRows(batches.filter(b=>inPeriod(repPeriod, b.createdAt)));
+  if(rows.length === 1){ showToast('No dispatch data in this period'); return; }
+  downloadCSV(`dispatch_report_${periodLabel(repPeriod)}.csv`, rows); showToast('Dispatch report downloaded');
+});
 document.getElementById('exportReturnsBtn').addEventListener('click', ()=>{
-  const rows = [['Order Number','SKU','QTY','Return Date','Receiver','Return Agent','Matched to Dispatch']];
-  returns.filter(r=>withinRange(r.createdAt)).forEach(r=>{
-    (r.skus||[]).forEach(s=>{
-      rows.push([r.orderNumber, s.sku, s.qty, fmtDate(r.returnDate), r.receiver, r.returnAgent, r.matched ? 'Yes' : 'No']);
-    });
-  });
-  if(rows.length === 1){ showToast('No return data to export'); return; }
-  downloadCSV('returns_export_' + todayStr() + '.csv', rows);
-  showToast('Returns CSV downloaded');
+  const rows = returnCsvRows(returns.filter(r=>inPeriod(repPeriod, r.ts)));
+  if(rows.length === 1){ showToast('No return data in this period'); return; }
+  downloadCSV(`returns_report_${periodLabel(repPeriod)}.csv`, rows); showToast('Returns report downloaded');
 });
-
-loadBatches();
-loadReturns();
-loadMagentoIndex();
-loadUsers();
-loadActivityLog();
 
 /* ---------- ORDER ATTEMPT HISTORY ---------- */
 document.getElementById('orderLookupInput').addEventListener('input', renderOrderLookup);
@@ -1657,20 +1679,25 @@ function renderOrderLookup(){
   const val = document.getElementById('orderLookupInput').value.trim();
   const result = document.getElementById('orderLookupResult');
   if(!val){ result.innerHTML = ''; return; }
-  const dispatchAttempts = batches.filter(b => (b.orders||[]).includes(val));
-  const returnAttempts = returns.filter(r => r.orderNumber === val);
-  if(dispatchAttempts.length === 0 && returnAttempts.length === 0){
-    result.innerHTML = `<div class="empty">No dispatch or return history found for "${escapeHtml(val)}".</div>`;
-    return;
-  }
+  const st = ordStat(val);
+  if(st.dispatchN === 0 && st.returnN === 0){ result.innerHTML = `<div class="empty">No dispatch or return history found for "${escapeHtml(val)}".</div>`; return; }
   result.innerHTML = `
     <div class="magento-note" style="background:var(--paper-raised); color:var(--ink); border:1.5px solid var(--line);">
-      <div style="font-weight:700; margin-bottom:6px;">${dispatchAttempts.length} dispatch attempt(s) · ${returnAttempts.length} return attempt(s)</div>
-      ${dispatchAttempts.map(b=>`<div class="ref-row" style="color:var(--ink-soft);">📦 Dispatched ${fmtDateTime(b.createdAt)} — Agent: ${escapeHtml(b.agent)}, Location: ${escapeHtml(b.location)}, by ${escapeHtml(b.dispatcher)}</div>`).join('')}
-      ${returnAttempts.map(r=>`<div class="ref-row" style="color:var(--ink-soft);">↩ Returned ${fmtDate(r.returnDate)} — Received by ${escapeHtml(r.receiver)}, brought by ${escapeHtml(r.returnAgent)}</div>`).join('')}
-    </div>
-  `;
+      <div style="font-weight:700; margin-bottom:6px;">${st.dispatchN} dispatch attempt(s) · ${st.returnN} return(s)</div>
+      ${st.d.map((b,i)=>`<div class="ref-row" style="color:var(--ink-soft);">📦 Attempt ${i+1}: dispatched ${fmtDateTime(b.createdAt)} — Agent: ${escapeHtml(b.agent)}, Location: ${escapeHtml(b.location)}, by ${escapeHtml(b.dispatcher)}${b.remark ? ' — ' + escapeHtml(b.remark) : ''}</div>`).join('')}
+      ${st.r.map(r=>`<div class="ref-row" style="color:var(--ink-soft);">↩ Returned ${fmtDate(r.returnDate)} — Received by ${escapeHtml(r.receiver)}, brought by ${escapeHtml(r.returnAgent)}${r.remark ? ' — ' + escapeHtml(r.remark) : ''}</div>`).join('')}
+    </div>`;
 }
+
+/* =====================================================================
+   START
+   ===================================================================== */
+(function boot(){
+  document.getElementById('fReturnDate').value = todayStr();
+  if(session && session.token){ loginAs(session); }   // already signed in on this device → straight in, with cached data
+  else { document.getElementById('appWrap').style.display = 'none'; }
+  setSyncUI();
+})();
 </script>
 </body>
 </html>
