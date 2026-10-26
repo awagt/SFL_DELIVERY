@@ -161,11 +161,7 @@
   .login-card .brand-mark{justify-content:center; margin-bottom:6px;}
   .login-card h1{text-align:center; font-size:20px; margin-bottom:4px;}
   .login-sub{text-align:center; font-size:12px; color:var(--ink-soft); margin-bottom:20px; font-family:'IBM Plex Mono',monospace;}
-  .role-toggle{display:flex; gap:6px; margin-bottom:16px; background:var(--paper); border-radius:9px; padding:4px;}
-  .role-toggle button{flex:1; padding:8px; border:none; border-radius:6px; background:none; font-weight:600; font-size:12.5px; cursor:pointer; color:var(--ink-soft); font-family:'Inter',sans-serif;}
-  .role-toggle button.active{background:var(--paper-raised); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,0.08);}
-  .login-form{display:none; flex-direction:column; gap:10px;}
-  .login-form.active{display:flex;}
+  .login-form{display:flex; flex-direction:column; gap:10px;}
   .login-form input{padding:12px 14px; border-radius:9px; border:1.5px solid var(--line); font-family:'Inter',sans-serif; font-size:14px;}
   .login-form input:focus{outline:none; border-color:var(--slate);}
   .login-form button{background:var(--amber); color:#fff; border:none; border-radius:9px; padding:12px; font-weight:700; font-size:13.5px; cursor:pointer; text-transform:uppercase; letter-spacing:0.4px; font-family:'Inter',sans-serif;}
@@ -260,19 +256,10 @@
     <div class="brand-mark"><div class="dot"></div></div>
     <h1>SFL Dispatch & Returns</h1>
     <div class="login-sub">sign in to continue</div>
-    <div class="role-toggle">
-      <button class="active" data-role="staff" id="roleToggleStaff">Team Login</button>
-      <button data-role="admin" id="roleToggleAdmin">Admin</button>
-    </div>
-    <div class="login-form active" id="staffForm">
-      <input id="teamUsername" placeholder="Username" autocomplete="off">
-      <input id="teamPassword" type="password" placeholder="Password" autocomplete="off">
-      <button type="button" id="staffSubmitBtn">Sign in</button>
-    </div>
-    <div class="login-form" id="adminForm">
-      <input id="adminUser" placeholder="Username" autocomplete="off">
-      <input id="adminPass" type="password" placeholder="Password" autocomplete="off">
-      <button type="button" id="adminSubmitBtn">Sign in</button>
+    <div class="login-form" id="loginForm">
+      <input id="loginUser" placeholder="Username" autocomplete="username" autocapitalize="off">
+      <input id="loginPass" type="password" placeholder="Password" autocomplete="current-password">
+      <button type="button" id="loginSubmitBtn">Sign in</button>
     </div>
     <div class="login-error" id="loginError"></div>
   </div>
@@ -489,7 +476,7 @@ const store = {
   set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
   del(k){ try{ localStorage.removeItem(k); }catch(e){} }
 };
-const K_SESSION = 'sfl_session_v7', K_CACHE = 'sfl_cache_v7', K_QUEUE = 'sfl_queue_v7', K_MAGENTO = 'sfl_magento_v7';
+const K_SESSION = 'sfl_session_v7', K_CACHE = 'sfl_cache_v8', K_QUEUE = 'sfl_queue_v7', K_MAGENTO = 'sfl_magento_v7';
 
 /* ---------- transport: one function for every server call ---------- */
 let session = store.get(K_SESSION); // {token,name,role,username}
@@ -736,14 +723,16 @@ function groupDispatchRows(rows){
   return order.map(id=>byBatch[id]).sort((a,b)=> (b.createdAt||0) - (a.createdAt||0));
 }
 function groupReturnRows(rows){
+  // One card per RETURN EVENT (Return ID from the sheet) — never merged by order/date/receiver,
+  // so the same order returned twice (same day, same or different receiver) stays as two entries.
   const map = new Map();
-  rows.forEach(r=>{
-    const key = [r.orderNumber, r.returnDate, r.receiver].join('|');
-    let g = map.get(key);
+  rows.forEach((r, i)=>{
+    const rid = r.returnId || ('row' + i);
+    let g = map.get(rid);
     if(!g){
-      g = { id: 'r' + hashStr(key), orderNumber: r.orderNumber, returnDate: r.returnDate, receiver: r.receiver,
+      g = { id: 'r' + rid, returnId: rid, orderNumber: r.orderNumber, returnDate: r.returnDate, receiver: r.receiver,
         returnAgent: r.returnAgent, matched: !!r.matched, remark: '', skus: [], ts: dayTs(r.returnDate) };
-      map.set(key, g);
+      map.set(rid, g);
     }
     if(!g.remark && r.remark) g.remark = r.remark;
     g.skus.push({ sku: r.sku, qty: Number(r.qty) || 1 });
@@ -813,15 +802,6 @@ const repPeriod = makePeriod('repPeriodBar', ()=>renderReports());
 /* =====================================================================
    AUTH
    ===================================================================== */
-document.getElementById('roleToggleStaff').addEventListener('click', ()=>switchLoginRole('staff'));
-document.getElementById('roleToggleAdmin').addEventListener('click', ()=>switchLoginRole('admin'));
-function switchLoginRole(role){
-  document.getElementById('roleToggleStaff').classList.toggle('active', role==='staff');
-  document.getElementById('roleToggleAdmin').classList.toggle('active', role==='admin');
-  document.getElementById('staffForm').classList.toggle('active', role==='staff');
-  document.getElementById('adminForm').classList.toggle('active', role==='admin');
-  document.getElementById('loginError').textContent = '';
-}
 function wireLogin(userId, passId, btnId){
   const go = async ()=>{
     const username = document.getElementById(userId).value.trim();
@@ -832,8 +812,7 @@ function wireLogin(userId, passId, btnId){
   document.getElementById(btnId).addEventListener('click', go);
   [userId, passId].forEach(id => document.getElementById(id).addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); go(); } }));
 }
-wireLogin('teamUsername','teamPassword','staffSubmitBtn');
-wireLogin('adminUser','adminPass','adminSubmitBtn');
+wireLogin('loginUser','loginPass','loginSubmitBtn');
 
 async function attemptLogin(username, password, btnId){
   const btn = document.getElementById(btnId);
@@ -896,7 +875,7 @@ function showLogin(message){
   editingBatchId = null; editingReturnId = null; editingUserId = null;
   document.getElementById('appWrap').style.display = 'none';
   document.getElementById('loginOverlay').style.display = 'flex';
-  ['teamUsername','teamPassword','adminUser','adminPass'].forEach(id => document.getElementById(id).value = '');
+  ['loginUser','loginPass'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('loginError').textContent = message || '';
 }
 function forceLogout(message){
@@ -1300,6 +1279,8 @@ function renderDBoard(){
             <input id="editDispatcher-${b.id}" value="${escapeHtml(b.dispatcher)}" placeholder="Dispatcher">
             <input id="editAgent-${b.id}" value="${escapeHtml(b.agent)}" placeholder="Delivery agent" list="agentOptions">
             <input id="editLocation-${b.id}" value="${escapeHtml(b.location)}" placeholder="Dispatch location" list="locationOptions">
+            <label style="font-size:11.5px; color:var(--ink-soft);">Order numbers — separate with commas, spaces or new lines (fix typos here)</label>
+            <textarea id="editOrders-${b.id}" rows="3" style="font-family:'IBM Plex Mono',monospace;">${escapeHtml((b.orders||[]).join(', '))}</textarea>
             <textarea id="editRemark-${b.id}" rows="2" placeholder="Remark">${escapeHtml(b.remark)}</textarea>
             <div class="edit-actions"><button class="btn-save" onclick="saveBatchEdit('${b.id}')">Save</button><button onclick="cancelEditBatch()">Cancel</button></div>
           </div></div>`;
@@ -1342,10 +1323,18 @@ window.saveBatchEdit = (id)=>{
   const agent = document.getElementById('editAgent-'+id).value.trim() || batch.agent;
   const location = document.getElementById('editLocation-'+id).value.trim() || batch.location;
   const remark = document.getElementById('editRemark-'+id).value.trim();
+  const orders = [...new Set(document.getElementById('editOrders-'+id).value.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean))];
+  if(orders.length === 0){ showToast('A batch needs at least one order number'); return; }
+  const before = batch.orders || [];
+  const ordersChanged = orders.length !== before.length || orders.some((o,i)=>o !== before[i]);
+  const removed = before.filter(o => !orders.includes(o)), added = orders.filter(o => !before.includes(o));
   Object.assign(batch, { dispatcher, agent, location, remark });
+  if(ordersChanged) batch.orders = [...before.filter(o => orders.includes(o)), ...added];
   editingBatchId = null; rememberNames(agent, location); dataChanged();
-  enqueue('updateDispatch', { batchId: id, patch: { dispatcher, agent, location, remark },
-    log: { action:'batch_edited', details:`Edited batch ${id}: agent=${agent}, location=${location}, dispatcher=${dispatcher}` } });
+  const patch = { dispatcher, agent, location, remark };
+  if(ordersChanged) patch.orders = orders;
+  enqueue('updateDispatch', { batchId: id, patch,
+    log: { action:'batch_edited', details:`Edited batch ${id}: agent=${agent}, location=${location}, dispatcher=${dispatcher}${ordersChanged ? ` — orders: removed [${removed.join(', ')}], added [${added.join(', ')}]` : ''}` } });
   showToast('Batch updated');
 };
 
@@ -1443,15 +1432,13 @@ rSubmitBtn.addEventListener('click', ()=>{
   const skuEntries = Object.entries(tallySkus()).map(([sku,qty])=>({sku,qty}));
   const receiver = currentUser.name; // locked to the signed-in staff member
   const matched = !!matchedBatch;
-  const key = [orderNumber, returnDate, receiver].join('|');
-  const existing = returns.find(r => r.id === 'r' + hashStr(key));
-  if(existing){ skuEntries.forEach(e => existing.skus.push({ sku: e.sku, qty: e.qty })); if(!existing.remark) existing.remark = remark; }
-  else returns.unshift({ id: 'r' + hashStr(key), orderNumber, returnDate, receiver, returnAgent, matched, remark, skus: skuEntries, ts: dayTs(returnDate) });
+  const returnId = 'R' + uid();
+  returns.unshift({ id: 'r' + returnId, returnId, orderNumber, returnDate, receiver, returnAgent, matched, remark, skus: skuEntries, ts: dayTs(returnDate) });
   rememberNames(returnAgent, '');
   const totalUnits = skuEntries.reduce((s,e)=>s+e.qty,0);
   resetReturnForm();
   dataChanged();
-  enqueue('addReturn', { orderNumber, skus: skuEntries, returnDate, returnAgent, matched, remark,
+  enqueue('addReturn', { returnId, orderNumber, skus: skuEntries, returnDate, returnAgent, matched, remark,
     log: { action:'return', details:`Logged return for order ${orderNumber} (${skuEntries.length} SKU(s), ${totalUnits} unit(s)), received by ${receiver}${remark ? ' — ' + remark : ''}` } });
   showToast(`Return logged for ${orderNumber}`);
 });
@@ -1462,7 +1449,7 @@ window.removeReturn = async (id)=>{
   if(!ok) return;
   const ret = returns.find(r=>r.id===id); if(!ret) return;
   returns = returns.filter(r=>r.id !== id); dataChanged();
-  enqueue('deleteReturn', { identity: { orderNumber: ret.orderNumber, returnDate: ret.returnDate, receiver: ret.receiver },
+  enqueue('deleteReturn', { returnId: ret.returnId,
     log: { action:'return_deleted', details:`Deleted return record for order ${ret.orderNumber}` } });
   showToast('Return removed');
 };
@@ -1528,14 +1515,13 @@ window.editReturn = (id)=>{ editingReturnId = id; renderRBoard(); };
 window.cancelEditReturn = ()=>{ editingReturnId = null; renderRBoard(); };
 window.saveReturnEdit = (id)=>{
   const ret = returns.find(r=>r.id===id); if(!ret) return;
-  const identity = { orderNumber: ret.orderNumber, returnDate: ret.returnDate, receiver: ret.receiver };
   const receiver = document.getElementById('editReceiver-'+id).value.trim() || ret.receiver;
   const returnAgent = document.getElementById('editReturnAgent-'+id).value.trim() || ret.returnAgent;
   const returnDate = document.getElementById('editReturnDate-'+id).value || ret.returnDate;
   const remark = document.getElementById('editRRemark-'+id).value.trim();
-  Object.assign(ret, { receiver, returnAgent, returnDate, remark, ts: dayTs(returnDate), id: 'r' + hashStr([ret.orderNumber, returnDate, receiver].join('|')) });
+  Object.assign(ret, { receiver, returnAgent, returnDate, remark, ts: dayTs(returnDate) });
   editingReturnId = null; dataChanged();
-  enqueue('updateReturn', { identity, patch: { receiver, returnAgent, returnDate, remark }, log: { action:'return_edited', details:`Edited return for order ${ret.orderNumber}` } });
+  enqueue('updateReturn', { returnId: ret.returnId, patch: { receiver, returnAgent, returnDate, remark }, log: { action:'return_edited', details:`Edited return for order ${ret.orderNumber}` } });
   showToast('Return updated');
 };
 
