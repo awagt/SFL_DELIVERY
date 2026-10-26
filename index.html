@@ -311,6 +311,7 @@
       <div class="scan-chips" id="dScanChips"></div>
       <div class="assign-row" id="dAssignRow">
         <input id="fDispatcher" placeholder="Dispatcher name (you)" disabled title="Locked to your signed-in name">
+        <input id="fDispatchTime" disabled title="Date &amp; time are recorded automatically">
         <input id="fAgent" placeholder="Delivery agent" list="agentOptions">
         <input id="fLocation" placeholder="Dispatch location" list="locationOptions">
         <textarea id="dRemark" placeholder="Remark (optional) — e.g. customer not available, fragile, COD…" rows="1"></textarea>
@@ -350,7 +351,7 @@
       <div class="scan-chips" id="rSkuChips"></div>
 
       <div class="assign-row" id="rAssignRow">
-        <input id="fReturnDate" type="date">
+        <input id="fReturnDate" disabled title="Date &amp; time are recorded automatically">
         <input id="fReceiver" placeholder="Return receiver (you)" disabled title="Locked to your signed-in name">
         <input id="fReturnAgent" placeholder="Return agent (who brought it back)">
         <textarea id="rRemark" placeholder="Remark (optional) — e.g. damaged, wrong size, box opened…" rows="1"></textarea>
@@ -535,6 +536,10 @@ function fmtDateTime(ts){ const dt = new Date(ts); if(!ts || isNaN(dt)) return '
 function fmtDate(d){ if(!d) return '—'; const dt = new Date(d + 'T00:00:00'); if(isNaN(dt)) return d; return dt.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}); }
 function isoLocal(ts){ const d = new Date(ts); if(!ts || isNaN(d)) return ''; return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
 function escapeHtml(str){ if(str === null || str === undefined) return ''; return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function toLocalInput(ts){ const d = new Date(ts); if(!ts || isNaN(d)) return ''; return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+function hasTime(ts){ if(!ts) return false; const d = new Date(ts); return d.getHours() !== 0 || d.getMinutes() !== 0; }
+function fmtReturn(r){ return hasTime(r.returnAt) ? fmtDateTime(r.returnAt) : fmtDate(r.returnDate); }
+function returnStamp(r){ return hasTime(r.returnAt) ? isoLocal(r.returnAt) : (r.returnDate || ''); }
 function todayStr(){ const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
 function dayTs(str){ if(!str) return 0; const p = String(str).slice(0,10).split('-').map(Number); if(p.length < 3 || p.some(isNaN)) return 0; return new Date(p[0], p[1]-1, p[2]).getTime(); }
 function monthKey(ts){ const d = new Date(ts); return isNaN(d) || !ts ? 'Unknown' : `${d.getFullYear()}-${pad2(d.getMonth()+1)}`; }
@@ -731,7 +736,7 @@ function groupReturnRows(rows){
     let g = map.get(rid);
     if(!g){
       g = { id: 'r' + rid, returnId: rid, orderNumber: r.orderNumber, returnDate: r.returnDate, receiver: r.receiver,
-        returnAgent: r.returnAgent, matched: !!r.matched, remark: '', skus: [], ts: dayTs(r.returnDate) };
+        returnAgent: r.returnAgent, matched: !!r.matched, remark: '', skus: [], returnAt: Number(r.returnAt) || 0, ts: Number(r.returnAt) || dayTs(r.returnDate) };
       map.set(rid, g);
     }
     if(!g.remark && r.remark) g.remark = r.remark;
@@ -1148,7 +1153,7 @@ dScanInput.addEventListener('keydown', async (e)=>{
     const lines = [`Order ${val} has been dispatched ${st.dispatchN} time${st.dispatchN>1?'s':''} before and came back.`,
       `This will be dispatch attempt #${n}.`, '',
       `Last dispatch: ${fmtDateTime(st.lastBatch.createdAt)} · ${st.lastBatch.agent}`];
-    if(st.lastReturn) lines.push(`Last return: ${fmtDate(st.lastReturn.returnDate)} · received by ${st.lastReturn.receiver}`);
+    if(st.lastReturn) lines.push(`Last return: ${fmtReturn(st.lastReturn)} · received by ${st.lastReturn.receiver}`);
     if(st.lastReturn && st.lastReturn.remark) lines.push(`Return remark: ${st.lastReturn.remark}`);
     await customAlert(lines.join('\n'), `⚠ ${ordinal(n)} attempt`);
   }
@@ -1276,6 +1281,8 @@ function renderDBoard(){
     if(editingBatchId === b.id){
       return `<div class="batch-card"><div class="batch-top"><div class="batch-left"><div class="batch-count">${(b.orders||[]).length}</div><div class="batch-info"><div class="agent">Editing batch</div></div></div></div>
           <div class="edit-form">
+            ${String(b.id).startsWith('M|') ? '' : `<label style="font-size:11.5px; color:var(--ink-soft);">Dispatch date &amp; time (Admin only)</label>
+            <input id="editDate-${b.id}" type="datetime-local" value="${toLocalInput(b.createdAt)}">`}
             <input id="editDispatcher-${b.id}" value="${escapeHtml(b.dispatcher)}" placeholder="Dispatcher">
             <input id="editAgent-${b.id}" value="${escapeHtml(b.agent)}" placeholder="Delivery agent" list="agentOptions">
             <input id="editLocation-${b.id}" value="${escapeHtml(b.location)}" placeholder="Dispatch location" list="locationOptions">
@@ -1328,10 +1335,15 @@ window.saveBatchEdit = (id)=>{
   const before = batch.orders || [];
   const ordersChanged = orders.length !== before.length || orders.some((o,i)=>o !== before[i]);
   const removed = before.filter(o => !orders.includes(o)), added = orders.filter(o => !before.includes(o));
+  const dEl = document.getElementById('editDate-'+id);
+  const newDate = dEl && dEl.value ? new Date(dEl.value).getTime() : batch.createdAt;
+  const dateChanged = newDate && newDate !== batch.createdAt;
   Object.assign(batch, { dispatcher, agent, location, remark });
+  if(dateChanged){ batch.createdAt = newDate; batches.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)); }
   if(ordersChanged) batch.orders = [...before.filter(o => orders.includes(o)), ...added];
   editingBatchId = null; rememberNames(agent, location); dataChanged();
   const patch = { dispatcher, agent, location, remark };
+  if(dateChanged) patch.dispatchDate = newDate;
   if(ordersChanged) patch.orders = orders;
   enqueue('updateDispatch', { batchId: id, patch,
     log: { action:'batch_edited', details:`Edited batch ${id}: agent=${agent}, location=${location}, dispatcher=${dispatcher}${ordersChanged ? ` — orders: removed [${removed.join(', ')}], added [${added.join(', ')}]` : ''}` } });
@@ -1403,42 +1415,46 @@ function renderRSkuChips(){
 }
 window.removeRSku = (sku)=>{ const idx = rSkus.lastIndexOf(sku); if(idx > -1) rSkus.splice(idx,1); renderRSkuChips(); };
 
-['fReturnAgent','fReturnDate'].forEach(id=>document.getElementById(id).addEventListener('input', validateReturnBtn));
+['fReturnAgent'].forEach(id=>document.getElementById(id).addEventListener('input', validateReturnBtn));
 function validateReturnBtn(){
   const orderNum = rOrderInput.value.trim();
   const returnAgent = document.getElementById('fReturnAgent').value.trim();
-  const date = document.getElementById('fReturnDate').value;
-  rSubmitBtn.disabled = !(orderNum && rSkus.length > 0 && currentUser && returnAgent && date);
+  rSubmitBtn.disabled = !(orderNum && rSkus.length > 0 && currentUser && returnAgent);
 }
 document.getElementById('rClearBtn').addEventListener('click', resetReturnForm);
 function resetReturnForm(){
   rOrderInput.value = ''; rSkus = []; matchedBatch = null;
   document.getElementById('fReturnAgent').value = '';
   document.getElementById('rRemark').value = '';
-  document.getElementById('fReturnDate').value = todayStr();
   rLookupBox.classList.remove('show','found','notfound');
   renderRSkuChips();
   rOrderInput.focus();
 }
-document.getElementById('fReturnDate').value = todayStr();
+function tickStamps(){
+  const label = '🕒 ' + fmtDateTime(Date.now()) + ' (auto)';
+  document.getElementById('fReturnDate').value = label;
+  document.getElementById('fDispatchTime').value = label;
+}
+tickStamps(); setInterval(tickStamps, 20000);
 
 rSubmitBtn.addEventListener('click', ()=>{
   const orderNumber = rOrderInput.value.trim();
   const returnAgent = document.getElementById('fReturnAgent').value.trim();
-  const returnDate = document.getElementById('fReturnDate').value;
+  const returnAt = Date.now();            // automatic — nobody types the date/time
+  const returnDate = todayStr();
   const remark = document.getElementById('rRemark').value.trim();
-  if(!orderNumber || rSkus.length === 0 || !currentUser || !returnAgent || !returnDate) return;
+  if(!orderNumber || rSkus.length === 0 || !currentUser || !returnAgent) return;
 
   const skuEntries = Object.entries(tallySkus()).map(([sku,qty])=>({sku,qty}));
   const receiver = currentUser.name; // locked to the signed-in staff member
   const matched = !!matchedBatch;
   const returnId = 'R' + uid();
-  returns.unshift({ id: 'r' + returnId, returnId, orderNumber, returnDate, receiver, returnAgent, matched, remark, skus: skuEntries, ts: dayTs(returnDate) });
+  returns.unshift({ id: 'r' + returnId, returnId, orderNumber, returnDate, receiver, returnAgent, matched, remark, skus: skuEntries, returnAt, ts: returnAt });
   rememberNames(returnAgent, '');
   const totalUnits = skuEntries.reduce((s,e)=>s+e.qty,0);
   resetReturnForm();
   dataChanged();
-  enqueue('addReturn', { returnId, orderNumber, skus: skuEntries, returnDate, returnAgent, matched, remark,
+  enqueue('addReturn', { returnId, orderNumber, skus: skuEntries, returnAt, returnAgent, matched, remark,
     log: { action:'return', details:`Logged return for order ${orderNumber} (${skuEntries.length} SKU(s), ${totalUnits} unit(s)), received by ${receiver}${remark ? ' — ' + remark : ''}` } });
   showToast(`Return logged for ${orderNumber}`);
 });
@@ -1483,7 +1499,8 @@ function renderRBoard(){
           <div class="edit-form">
             <input id="editReceiver-${r.id}" value="${escapeHtml(r.receiver)}" placeholder="Receiver">
             <input id="editReturnAgent-${r.id}" value="${escapeHtml(r.returnAgent)}" placeholder="Return agent" list="agentOptions">
-            <input id="editReturnDate-${r.id}" type="date" value="${escapeHtml(r.returnDate)}">
+            <label style="font-size:11.5px; color:var(--ink-soft);">Return date &amp; time (Admin only)</label>
+            <input id="editReturnDate-${r.id}" type="datetime-local" value="${toLocalInput(r.returnAt || dayTs(r.returnDate))}">
             <textarea id="editRRemark-${r.id}" rows="2" placeholder="Remark">${escapeHtml(r.remark)}</textarea>
             <div class="edit-actions"><button class="btn-save" onclick="saveReturnEdit('${r.id}')">Save</button><button onclick="cancelEditReturn()">Cancel</button></div>
           </div></div>`;
@@ -1495,7 +1512,7 @@ function renderRBoard(){
           <div class="batch-count">${units}</div>
           <div class="batch-info">
             <div class="agent">Order ${escapeHtml(r.orderNumber)}</div>
-            <div class="meta-line">Received by ${escapeHtml(r.receiver)} &middot; brought by ${escapeHtml(r.returnAgent)} &middot; ${fmtDate(r.returnDate)}</div>
+            <div class="meta-line">Received by ${escapeHtml(r.receiver)} &middot; brought by ${escapeHtml(r.returnAgent)} &middot; ${fmtReturn(r)}</div>
             ${r.remark ? `<div class="remark-line">📝 ${escapeHtml(r.remark)}</div>` : ''}
           </div>
         </div>
@@ -1517,11 +1534,13 @@ window.saveReturnEdit = (id)=>{
   const ret = returns.find(r=>r.id===id); if(!ret) return;
   const receiver = document.getElementById('editReceiver-'+id).value.trim() || ret.receiver;
   const returnAgent = document.getElementById('editReturnAgent-'+id).value.trim() || ret.returnAgent;
-  const returnDate = document.getElementById('editReturnDate-'+id).value || ret.returnDate;
+  const dtVal = document.getElementById('editReturnDate-'+id).value;
+  const newAt = dtVal ? new Date(dtVal).getTime() : (ret.returnAt || dayTs(ret.returnDate));
+  const returnDate = dtVal ? dtVal.slice(0,10) : ret.returnDate;
   const remark = document.getElementById('editRRemark-'+id).value.trim();
-  Object.assign(ret, { receiver, returnAgent, returnDate, remark, ts: dayTs(returnDate) });
+  Object.assign(ret, { receiver, returnAgent, returnDate, remark, returnAt: newAt, ts: newAt });
   editingReturnId = null; dataChanged();
-  enqueue('updateReturn', { returnId: ret.returnId, patch: { receiver, returnAgent, returnDate, remark }, log: { action:'return_edited', details:`Edited return for order ${ret.orderNumber}` } });
+  enqueue('updateReturn', { returnId: ret.returnId, patch: { receiver, returnAgent, returnAt: newAt, remark }, log: { action:'return_edited', details:`Edited return for order ${ret.orderNumber}` } });
   showToast('Return updated');
 };
 
@@ -1629,8 +1648,8 @@ function dispatchCsvRows(list){
   return rows;
 }
 function returnCsvRows(list){
-  const rows = [['Order Number','SKU','QTY','Return Date','Receiver','Return Agent','Matched to Dispatch','Remark']];
-  list.forEach(r=>(r.skus||[]).forEach(s=>rows.push([r.orderNumber, s.sku, s.qty, r.returnDate, r.receiver, r.returnAgent, r.matched ? 'Yes' : 'No', r.remark || ''])));
+  const rows = [['Order Number','SKU','QTY','Return Date & Time','Receiver','Return Agent','Matched to Dispatch','Remark']];
+  list.forEach(r=>(r.skus||[]).forEach(s=>rows.push([r.orderNumber, s.sku, s.qty, returnStamp(r), r.receiver, r.returnAgent, r.matched ? 'Yes' : 'No', r.remark || ''])));
   return rows;
 }
 window.exportBatch = (id)=>{
@@ -1671,7 +1690,7 @@ function renderOrderLookup(){
     <div class="magento-note" style="background:var(--paper-raised); color:var(--ink); border:1.5px solid var(--line);">
       <div style="font-weight:700; margin-bottom:6px;">${st.dispatchN} dispatch attempt(s) · ${st.returnN} return(s)</div>
       ${st.d.map((b,i)=>`<div class="ref-row" style="color:var(--ink-soft);">📦 Attempt ${i+1}: dispatched ${fmtDateTime(b.createdAt)} — Agent: ${escapeHtml(b.agent)}, Location: ${escapeHtml(b.location)}, by ${escapeHtml(b.dispatcher)}${b.remark ? ' — ' + escapeHtml(b.remark) : ''}</div>`).join('')}
-      ${st.r.map(r=>`<div class="ref-row" style="color:var(--ink-soft);">↩ Returned ${fmtDate(r.returnDate)} — Received by ${escapeHtml(r.receiver)}, brought by ${escapeHtml(r.returnAgent)}${r.remark ? ' — ' + escapeHtml(r.remark) : ''}</div>`).join('')}
+      ${st.r.map(r=>`<div class="ref-row" style="color:var(--ink-soft);">↩ Returned ${fmtReturn(r)} — Received by ${escapeHtml(r.receiver)}, brought by ${escapeHtml(r.returnAgent)}${r.remark ? ' — ' + escapeHtml(r.remark) : ''}</div>`).join('')}
     </div>`;
 }
 
@@ -1679,7 +1698,6 @@ function renderOrderLookup(){
    START
    ===================================================================== */
 (function boot(){
-  document.getElementById('fReturnDate').value = todayStr();
   if(session && session.token){ loginAs(session); }   // already signed in on this device → straight in, with cached data
   else { document.getElementById('appWrap').style.display = 'none'; }
   setSyncUI();
